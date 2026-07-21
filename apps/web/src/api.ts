@@ -190,6 +190,8 @@ export type RecommendedKeyword = {
   nicheSeed?: string;
   reason?: string;
   volume?: number | null;
+  competition?: number | null;
+  score?: number;
 };
 
 export type RecommendationsResponse = {

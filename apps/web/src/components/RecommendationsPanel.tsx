@@ -155,7 +155,7 @@ export default function RecommendationsPanel({
       title="Recommended seeds"
       hint={
         followOnCount > 0
-          ? `${followOnCount} from your existing keyword data · use ← → to cycle`
+          ? `${followOnCount} ranked by high volume + low competition · use ← → to cycle`
           : "General search seeds — not limited to software"
       }
     >
@@ -236,6 +236,12 @@ export default function RecommendationsPanel({
                 {k.source === "follow_on" && k.volume != null && (
                   <span className="ml-1.5 tabular-nums text-zinc-600">
                     {num(k.volume)}
+                    {k.competition != null && (
+                      <span className="text-zinc-700">
+                        {" "}
+                        · {k.competition.toFixed(2)}
+                      </span>
+                    )}
                   </span>
                 )}
               </button>

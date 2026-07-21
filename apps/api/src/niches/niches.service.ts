@@ -379,19 +379,22 @@ export class NichesService {
     const existingSeeds = niches.map((n) => n.seedTerm);
     const nicheIds = niches.map((n) => n.id);
 
+    // Pull a broad high-volume pool, then rank by volume × low competition.
     const topKeywords =
       nicheIds.length === 0
         ? []
         : await this.prisma.keyword.findMany({
             where: {
               nicheId: { in: nicheIds },
-              searchVolume: { gt: 0 },
+              searchVolume: { gte: MIN_KEYWORD_VOLUME },
+              OR: [{ competition: null }, { competition: { lte: 0.85 } }],
             },
-            orderBy: { searchVolume: "desc" },
-            take: 120,
+            orderBy: [{ searchVolume: "desc" }, { competition: "asc" }],
+            take: 400,
             select: {
               term: true,
               searchVolume: true,
+              competition: true,
               nicheId: true,
               niche: { select: { seedTerm: true } },
             },
@@ -404,6 +407,7 @@ export class NichesService {
         nicheId: k.nicheId,
         nicheSeed: k.niche.seedTerm,
         volume: k.searchVolume,
+        competition: k.competition,
       })),
     });
   }

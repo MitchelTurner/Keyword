@@ -164,6 +164,9 @@ export type RecommendationKeyword = {
   nicheSeed?: string;
   reason?: string;
   volume?: number | null;
+  competition?: number | null;
+  /** Higher = better seed opportunity (volume × low competition). */
+  score?: number;
 };
 
 export type FollowOnCandidate = {
@@ -171,7 +174,11 @@ export type FollowOnCandidate = {
   nicheId: string;
   nicheSeed: string;
   volume: number | null;
+  competition?: number | null;
 };
+
+/** Soft ceiling — terms above this are usually too crowded to recommend as seeds. */
+export const MAX_RECOMMENDED_COMPETITION = 0.75;
 
 function normalizeTerm(term: string): string {
   return term.trim().toLowerCase().replace(/\s+/g, " ");
@@ -186,6 +193,30 @@ export function isSeedablePhrase(term: string): boolean {
   if (/https?:\/\//i.test(t)) return false;
   if (/^[0-9$]+$/.test(t)) return false;
   return true;
+}
+
+/**
+ * Rank seed opportunity: high search volume + low competition.
+ * Missing competition is treated as mid (0.55) so volume still matters.
+ */
+export function seedOpportunityScore(
+  volume: number | null | undefined,
+  competition: number | null | undefined,
+): number {
+  const vol = Math.max(0, volume ?? 0);
+  if (vol <= 0) return 0;
+  const comp =
+    competition == null
+      ? 0.55
+      : Math.min(1, Math.max(0, competition));
+  return Math.log10(vol + 1) * (1.05 - comp);
+}
+
+function competitionLabel(competition: number | null | undefined): string {
+  if (competition == null) return "unknown competition";
+  if (competition <= 0.35) return "low competition";
+  if (competition <= 0.6) return "moderate competition";
+  return "higher competition";
 }
 
 export function filterUnusedCurated(
@@ -219,6 +250,7 @@ export function curatedKeywordSuggestions(
 
 /**
  * Rank follow-on keyword seeds from enriched terms already in the DB.
+ * Prefers high search volume and low competition.
  */
 export function rankFollowOnKeywords(
   candidates: FollowOnCandidate[],
@@ -226,21 +258,38 @@ export function rankFollowOnKeywords(
   limit = 40,
 ): RecommendationKeyword[] {
   const used = new Set(existingSeeds.map(normalizeTerm));
-  const best = new Map<string, FollowOnCandidate>();
+  const best = new Map<
+    string,
+    FollowOnCandidate & { score: number }
+  >();
 
   for (const c of candidates) {
     if (!isSeedablePhrase(c.term)) continue;
     const key = normalizeTerm(c.term);
     if (used.has(key)) continue;
     if (key === normalizeTerm(c.nicheSeed)) continue;
+    const volume = c.volume ?? 0;
+    if (volume <= 0) continue;
+    // Skip clearly overcrowded terms when we know competition.
+    if (
+      c.competition != null &&
+      c.competition > MAX_RECOMMENDED_COMPETITION
+    ) {
+      continue;
+    }
+
+    const score = seedOpportunityScore(c.volume, c.competition);
     const prev = best.get(key);
-    if (!prev || (c.volume ?? 0) > (prev.volume ?? 0)) {
-      best.set(key, c);
+    if (!prev || score > prev.score) {
+      best.set(key, { ...c, score });
     }
   }
 
   return [...best.values()]
-    .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (b.volume ?? 0) - (a.volume ?? 0);
+    })
     .slice(0, limit)
     .map((c) => ({
       term: c.term,
@@ -248,7 +297,9 @@ export function rankFollowOnKeywords(
       nicheId: c.nicheId,
       nicheSeed: c.nicheSeed,
       volume: c.volume,
-      reason: `High-volume term from “${c.nicheSeed}”`,
+      competition: c.competition ?? null,
+      score: c.score,
+      reason: `${competitionLabel(c.competition)}, ${Math.round(c.volume ?? 0).toLocaleString()}/mo from “${c.nicheSeed}”`,
     }));
 }
 

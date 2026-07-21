@@ -24,6 +24,6 @@ ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 WORKDIR /app
 COPY --from=build /app /app
-RUN chmod +x scripts/start.sh
+RUN chmod +x scripts/start.sh scripts/migrate.sh
 EXPOSE 3000
-CMD ["sh", "-c", "sh scripts/migrate.sh && SKIP_MIGRATE=1 sh scripts/start.sh"]
+CMD ["sh", "scripts/start.sh"]

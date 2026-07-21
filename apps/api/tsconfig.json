@@ -11,7 +11,7 @@
     "noUncheckedIndexedAccess": false,
     "declaration": false,
     "declarationMap": false,
-    "incremental": true
+    "incremental": false
   },
   "include": ["src/**/*"]
 }

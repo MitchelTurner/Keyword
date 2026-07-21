@@ -24,23 +24,36 @@ export class PipelineWorker
   ) {}
 
   onModuleInit() {
-    const redisUrl = resolveRedisUrl(this.config.get<string>("REDIS_URL"));
-    this.logger.log(`Connecting BullMQ worker to Redis at ${safeRedisHost(redisUrl)}`);
-
-    this.worker = new Worker(
-      NICHE_PIPELINE_QUEUE,
-      async (job) => this.processor.process(job),
-      {
-        connection: redisConnection(redisUrl),
-        concurrency: 2,
-      },
-    );
-
-    this.worker.on("failed", (job, err) => {
-      this.logger.error(
-        `Job ${job?.name} failed for niche ${job?.data?.nicheId}: ${err.message}`,
+    try {
+      const redisUrl = resolveRedisUrl(this.config.get<string>("REDIS_URL"));
+      this.logger.log(
+        `Connecting BullMQ worker to Redis at ${safeRedisHost(redisUrl)}`,
       );
-    });
+
+      this.worker = new Worker(
+        NICHE_PIPELINE_QUEUE,
+        async (job) => this.processor.process(job),
+        {
+          connection: redisConnection(redisUrl),
+          concurrency: 2,
+        },
+      );
+
+      this.worker.on("failed", (job, err) => {
+        this.logger.error(
+          `Job ${job?.name} failed for niche ${job?.data?.nicheId}: ${err.message}`,
+        );
+      });
+
+      this.worker.on("error", (err) => {
+        this.logger.error(`BullMQ worker error: ${err.message}`);
+      });
+    } catch (err) {
+      // Don't take down HTTP if the queue worker fails to construct.
+      this.logger.error(
+        `Failed to start BullMQ worker: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     // v2 stub — do not register yet:
     // case "serp": await this.serp(nicheId); break;

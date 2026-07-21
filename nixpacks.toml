@@ -9,10 +9,11 @@ cmds = [
   "pnpm --filter @prospector/shared build",
   "pnpm --filter @prospector/api prisma:generate",
   "pnpm --filter @prospector/api build",
-  "pnpm --filter @prospector/web build",
   "test -f apps/api/dist/main.js",
+  "test -f apps/api/dist/app.module.js",
+  "pnpm --filter @prospector/web build",
   "test -f apps/web/dist/index.html"
 ]
 
 [start]
-cmd = "SKIP_MIGRATE=1 sh scripts/start.sh"
+cmd = "sh scripts/start.sh"

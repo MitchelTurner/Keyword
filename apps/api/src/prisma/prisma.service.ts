@@ -1,24 +1,16 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Injectable, OnModuleDestroy } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 
 @Injectable()
-export class PrismaService
-  extends PrismaClient
-  implements OnModuleInit, OnModuleDestroy
-{
+export class PrismaService extends PrismaClient implements OnModuleDestroy {
   constructor() {
     super({
-      log:
-        process.env.NODE_ENV === "production"
-          ? ["warn", "error"]
-          : ["warn", "error"],
+      log: ["warn", "error"],
     });
   }
 
-  async onModuleInit() {
-    // Fail fast on bad DATABASE_URL, but keep the connect timeout tight.
-    await this.$connect();
-  }
+  // Intentionally no onModuleInit $connect — lazy connect on first query
+  // so HTTP can bind even if DB is briefly unavailable during Railway boot.
 
   async onModuleDestroy() {
     await this.$disconnect();

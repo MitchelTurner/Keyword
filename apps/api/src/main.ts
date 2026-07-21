@@ -1,11 +1,17 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
-import compression from "compression";
 import type { NextFunction, Request, Response } from "express";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { normalizeEnv } from "./env";
 import { AppModule } from "./app.module";
+
+// compression is CJS — import defensively for Nest's CommonJS emit
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const compression = require("compression") as typeof import("compression");
+
+normalizeEnv();
 
 async function bootstrap() {
   const bootStarted = Date.now();
@@ -34,7 +40,6 @@ async function bootstrap() {
     logger: isProd ? ["error", "warn", "log"] : undefined,
   });
 
-  // Gzip JSON + HTML/CSS/JS responses (big win on Railway edge).
   app.use(compression());
 
   const origin = process.env.CORS_ORIGIN ?? true;
@@ -52,8 +57,6 @@ async function bootstrap() {
 
   if (webDist) {
     console.log(`Serving web UI from ${webDist}`);
-
-    // Hashed Vite assets: cache hard. HTML: always revalidate.
     app.useStaticAssets(webDist, {
       index: false,
       maxAge: isProd ? "365d" : 0,
@@ -84,6 +87,8 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? "0.0.0.0";
+
+  // Bind immediately on 0.0.0.0 so Railway's edge proxy can reach us.
   await app.listen(port, host);
   console.log(
     `Prospector API listening on http://${host}:${port} (boot ${Date.now() - bootStarted}ms)`,

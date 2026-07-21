@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "nest start --watch",
-    "build": "nest build",
+    "build": "rm -rf dist tsconfig.build.tsbuildinfo && nest build && test -f dist/main.js && test -f dist/app.module.js",
     "start": "node dist/main.js",
     "start:prod": "prisma migrate deploy && node dist/main.js",
+
     "test": "vitest run",
     "test:watch": "vitest",
     "prisma:generate": "prisma generate",

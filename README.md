@@ -79,7 +79,11 @@ pnpm test
 1. Create a service from this repo (root directory).
 2. Add **Postgres** and **Redis** plugins — Railway injects `DATABASE_URL` and `REDIS_URL`.
 3. Set secrets: `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD`, `ANTHROPIC_API_KEY`.
-4. Deploy. Migrations run in `preDeployCommand`; the web process starts with `SKIP_MIGRATE=1` for faster cold boots.
-5. Health check: `GET /health`. The API also serves the web UI from `apps/web/dist` (gzip + long-cache for hashed assets).
+4. Deploy. Start script migrates then binds `0.0.0.0:$PORT`.
+5. Health check: `GET /health` (liveness, no DB). Readiness: `GET /health/ready`.
+6. In Railway **Settings → Networking**, leave the domain target port empty / default so it uses `$PORT` (do not hardcode `3000`).
 
-If you see “Application failed to respond”, check deploy logs for missing `DATABASE_URL` / `REDIS_URL` or a failed migrate step.
+If you see “upstream error” / 502:
+- Confirm deploy logs include `Prospector API listening on http://0.0.0.0:...`
+- Confirm Postgres + Redis plugins are linked to **this** service
+- Confirm public domain target port matches `$PORT` (or is unset)

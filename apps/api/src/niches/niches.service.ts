@@ -41,16 +41,17 @@ export class NichesService {
   }
 
   async list() {
-    const niches = await this.prisma.niche.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        _count: {
-          select: { keywords: true, opportunities: true },
+    const [niches, globalCost] = await Promise.all([
+      this.prisma.niche.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          _count: {
+            select: { keywords: true, opportunities: true },
+          },
         },
-      },
-    });
-
-    const globalCost = await this.cost.globalTotal();
+      }),
+      this.cost.globalTotal(),
+    ]);
 
     return {
       globalCost,

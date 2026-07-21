@@ -26,4 +26,4 @@ WORKDIR /app
 COPY --from=build /app /app
 RUN chmod +x scripts/start.sh
 EXPOSE 3000
-CMD ["sh", "scripts/start.sh"]
+CMD ["sh", "-c", "sh scripts/migrate.sh && SKIP_MIGRATE=1 sh scripts/start.sh"]

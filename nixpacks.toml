@@ -15,4 +15,4 @@ cmds = [
 ]
 
 [start]
-cmd = "sh scripts/start.sh"
+cmd = "SKIP_MIGRATE=1 sh scripts/start.sh"

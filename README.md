@@ -79,7 +79,7 @@ pnpm test
 1. Create a service from this repo (root directory).
 2. Add **Postgres** and **Redis** plugins — Railway injects `DATABASE_URL` and `REDIS_URL`.
 3. Set secrets: `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD`, `ANTHROPIC_API_KEY`.
-4. Deploy. Start command runs migrations then `node apps/api/dist/main.js` on `0.0.0.0:$PORT`.
-5. Health check: `GET /health`. The API also serves the web UI from `apps/web/dist`.
+4. Deploy. Migrations run in `preDeployCommand`; the web process starts with `SKIP_MIGRATE=1` for faster cold boots.
+5. Health check: `GET /health`. The API also serves the web UI from `apps/web/dist` (gzip + long-cache for hashed assets).
 
-If you see “Application failed to respond”, check deploy logs for missing `DATABASE_URL` / `REDIS_URL` or a failed `prisma migrate deploy`.
+If you see “Application failed to respond”, check deploy logs for missing `DATABASE_URL` / `REDIS_URL` or a failed migrate step.

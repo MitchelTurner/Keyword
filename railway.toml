@@ -3,7 +3,9 @@ builder = "NIXPACKS"
 buildCommand = "pnpm install --frozen-lockfile=false && pnpm --filter @prospector/shared build && pnpm --filter @prospector/api prisma:generate && pnpm --filter @prospector/api build && pnpm --filter @prospector/web build"
 
 [deploy]
-startCommand = "sh scripts/start.sh"
+# Run migrations once per deploy (not on every cold start).
+preDeployCommand = "sh scripts/migrate.sh"
+startCommand = "SKIP_MIGRATE=1 sh scripts/start.sh"
 healthcheckPath = "/health"
 healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"

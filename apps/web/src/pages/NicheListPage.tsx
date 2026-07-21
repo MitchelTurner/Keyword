@@ -18,6 +18,7 @@ export default function NicheListPage() {
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const anyInFlight = useMemo(
     () => niches.some((n) => IN_FLIGHT.has(n.status)),
@@ -32,7 +33,9 @@ export default function NicheListPage() {
   }
 
   useEffect(() => {
-    refresh().catch((e) => setError(String(e)));
+    refresh()
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -147,7 +150,17 @@ export default function NicheListPage() {
             </tr>
           </thead>
           <tbody>
-            {niches.length === 0 && (
+            {loading && (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="px-3 py-8 text-center text-zinc-500"
+                >
+                  Loading niches…
+                </td>
+              </tr>
+            )}
+            {!loading && niches.length === 0 && (
               <tr>
                 <td
                   colSpan={6}

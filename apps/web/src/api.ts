@@ -200,6 +200,17 @@ export type RecommendationsResponse = {
   followOns: RecommendedKeyword[];
 };
 
+export type SeedSearchResponse = {
+  query: {
+    q: string;
+    minVolume: number;
+    maxCompetition: number;
+    limit: number;
+  };
+  count: number;
+  keywords: RecommendedKeyword[];
+};
+
 export const api = {
   listNiches: () =>
     request<{
@@ -208,6 +219,22 @@ export const api = {
       niches: NicheListItem[];
     }>("/niches"),
   recommendations: () => request<RecommendationsResponse>("/recommendations"),
+  searchSeeds: (params: {
+    q?: string;
+    minVolume?: number;
+    maxCompetition?: number;
+    limit?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params.q?.trim()) qs.set("q", params.q.trim());
+    if (params.minVolume != null) qs.set("minVolume", String(params.minVolume));
+    if (params.maxCompetition != null) {
+      qs.set("maxCompetition", String(params.maxCompetition));
+    }
+    if (params.limit != null) qs.set("limit", String(params.limit));
+    const suffix = qs.toString() ? `?${qs}` : "";
+    return request<SeedSearchResponse>(`/recommendations/seeds${suffix}`);
+  },
   portfolio: () =>
     request<{ count: number; items: PortfolioItem[] }>("/portfolio"),
   costEstimate: () => request<CostEstimate>("/niches/cost-estimate"),

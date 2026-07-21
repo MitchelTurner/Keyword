@@ -4,6 +4,7 @@ import {
   buildRecommendations,
   isSeedablePhrase,
   rankFollowOnKeywords,
+  searchSeedKeywords,
   seedOpportunityScore,
 } from "./recommendations";
 
@@ -99,5 +100,37 @@ describe("recommendations", () => {
     ).toBe(false);
     expect(ranked[0]?.competition).toBe(0.25);
     expect(ranked[0]?.reason?.toLowerCase()).toContain("competition");
+  });
+
+  it("searches seeds with min volume and max competition filters", () => {
+    const hits = searchSeedKeywords(
+      [
+        {
+          term: "low competition widgets",
+          nicheId: "a",
+          nicheSeed: "widgets",
+          volume: 1200,
+          competition: 0.2,
+        },
+        {
+          term: "busy widget market",
+          nicheId: "a",
+          nicheSeed: "widgets",
+          volume: 5000,
+          competition: 0.7,
+        },
+        {
+          term: "tiny widget tip",
+          nicheId: "a",
+          nicheSeed: "widgets",
+          volume: 80,
+          competition: 0.1,
+        },
+      ],
+      ["widgets"],
+      { minVolume: 500, maxCompetition: 0.45, limit: 10 },
+    );
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.term).toBe("low competition widgets");
   });
 });

@@ -8,7 +8,9 @@ import {
   analyzeOpportunityTrend,
   buildRecommendations,
   estimateRunCost,
+  searchSeedKeywords,
   type CreateNicheDto,
+  type SearchSeedKeywordsDto,
   type TrendAnalysis,
   type TrendPoint,
   type UpdateNicheAssumptionsDto,
@@ -410,6 +412,63 @@ export class NichesService {
         competition: k.competition,
       })),
     });
+  }
+
+  /**
+   * Search enriched keyword data for high-volume / low-competition seed ideas.
+   */
+  async searchSeeds(dto: SearchSeedKeywordsDto) {
+    const minVolume = Math.max(dto.minVolume, MIN_KEYWORD_VOLUME);
+    const maxCompetition = dto.maxCompetition;
+    const limit = dto.limit;
+    const q = dto.q.trim();
+
+    const niches = await this.prisma.niche.findMany({
+      select: { seedTerm: true },
+    });
+    const existingSeeds = niches.map((n) => n.seedTerm);
+
+    const rows = await this.prisma.keyword.findMany({
+      where: {
+        searchVolume: { gte: minVolume },
+        competition: { not: null, lte: maxCompetition },
+        ...(q
+          ? { term: { contains: q, mode: "insensitive" as const } }
+          : {}),
+      },
+      orderBy: [{ searchVolume: "desc" }, { competition: "asc" }],
+      take: 500,
+      select: {
+        term: true,
+        searchVolume: true,
+        competition: true,
+        nicheId: true,
+        niche: { select: { seedTerm: true } },
+      },
+    });
+
+    const keywords = searchSeedKeywords(
+      rows.map((k) => ({
+        term: k.term,
+        nicheId: k.nicheId,
+        nicheSeed: k.niche.seedTerm,
+        volume: k.searchVolume,
+        competition: k.competition,
+      })),
+      existingSeeds,
+      { minVolume, maxCompetition, limit },
+    );
+
+    return {
+      query: {
+        q,
+        minVolume,
+        maxCompetition,
+        limit,
+      },
+      count: keywords.length,
+      keywords,
+    };
   }
 
   async updateOpportunity(

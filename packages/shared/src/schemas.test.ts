@@ -3,6 +3,7 @@ import {
   ClaudeClassificationSchema,
   ClaudeKeywordExpandSchema,
   CreateNicheSchema,
+  SearchSeedKeywordsSchema,
   SearchVolumeItemSchema,
   UpdateNicheAssumptionsSchema,
   UpdateOpportunitySchema,
@@ -17,6 +18,33 @@ describe("CreateNicheSchema", () => {
 
   it("rejects empty seed", () => {
     expect(() => CreateNicheSchema.parse({ seedTerm: "  " })).toThrow();
+  });
+});
+
+describe("SearchSeedKeywordsSchema", () => {
+  it("applies high-volume low-competition defaults", () => {
+    expect(SearchSeedKeywordsSchema.parse({})).toMatchObject({
+      q: "",
+      minVolume: 500,
+      maxCompetition: 0.45,
+      limit: 40,
+    });
+  });
+
+  it("coerces query-string numbers", () => {
+    expect(
+      SearchSeedKeywordsSchema.parse({
+        q: " cleaning ",
+        minVolume: "1000",
+        maxCompetition: "0.3",
+        limit: "20",
+      }),
+    ).toEqual({
+      q: "cleaning",
+      minVolume: 1000,
+      maxCompetition: 0.3,
+      limit: 20,
+    });
   });
 });
 

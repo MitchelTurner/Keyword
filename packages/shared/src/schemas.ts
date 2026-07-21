@@ -32,6 +32,15 @@ export const CreateNicheSchema = z.object({
 });
 export type CreateNicheDto = z.infer<typeof CreateNicheSchema>;
 
+/** Search enriched keywords for high-volume / low-competition seed ideas. */
+export const SearchSeedKeywordsSchema = z.object({
+  q: z.string().trim().max(200).optional().default(""),
+  minVolume: z.coerce.number().int().min(0).max(10_000_000).optional().default(500),
+  maxCompetition: z.coerce.number().min(0).max(1).optional().default(0.45),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(40),
+});
+export type SearchSeedKeywordsDto = z.infer<typeof SearchSeedKeywordsSchema>;
+
 export const RubricConfigSchema = z.object({
   minMonthlyFloor: z.number().min(0).max(100000),
   minVolume: z.number().int().min(0).max(10_000_000),

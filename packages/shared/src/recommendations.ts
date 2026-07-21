@@ -303,6 +303,63 @@ export function rankFollowOnKeywords(
     }));
 }
 
+/**
+ * Search / filter enriched keyword rows for seed ideas.
+ * Caller should already constrain the DB query; this dedupes, drops used seeds,
+ * keeps seedable phrases, and ranks by high volume + low competition.
+ */
+export function searchSeedKeywords(
+  candidates: FollowOnCandidate[],
+  existingSeeds: string[],
+  opts: {
+    minVolume?: number;
+    maxCompetition?: number;
+    limit?: number;
+  } = {},
+): RecommendationKeyword[] {
+  const minVolume = opts.minVolume ?? 500;
+  const maxCompetition = opts.maxCompetition ?? 0.45;
+  const limit = opts.limit ?? 40;
+  const used = new Set(existingSeeds.map(normalizeTerm));
+  const best = new Map<string, FollowOnCandidate & { score: number }>();
+
+  for (const c of candidates) {
+    if (!isSeedablePhrase(c.term)) continue;
+    const key = normalizeTerm(c.term);
+    if (used.has(key)) continue;
+    if (key === normalizeTerm(c.nicheSeed)) continue;
+    const volume = c.volume ?? 0;
+    if (volume < minVolume) continue;
+    if (c.competition == null || c.competition > maxCompetition) continue;
+
+    const score = seedOpportunityScore(c.volume, c.competition);
+    const prev = best.get(key);
+    if (!prev || score > prev.score) {
+      best.set(key, { ...c, score });
+    }
+  }
+
+  return [...best.values()]
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if ((b.volume ?? 0) !== (a.volume ?? 0)) {
+        return (b.volume ?? 0) - (a.volume ?? 0);
+      }
+      return (a.competition ?? 1) - (b.competition ?? 1);
+    })
+    .slice(0, limit)
+    .map((c) => ({
+      term: c.term,
+      source: "follow_on" as const,
+      nicheId: c.nicheId,
+      nicheSeed: c.nicheSeed,
+      volume: c.volume,
+      competition: c.competition ?? null,
+      score: c.score,
+      reason: `${competitionLabel(c.competition)}, ${Math.round(c.volume ?? 0).toLocaleString()}/mo from “${c.nicheSeed}”`,
+    }));
+}
+
 export function buildRecommendations(input: {
   existingSeeds: string[];
   followOnCandidates?: FollowOnCandidate[];

@@ -116,7 +116,7 @@ export default function NicheListPage() {
     <div className="space-y-6 animate-fade-up">
       <PageHeader
         title="Niches"
-        description="Seed a term, expand the keyword universe, and rank software product opportunities."
+        description="Seed a term, expand related keywords with volume/CPC, and cluster them into research themes."
       />
 
       <Panel>

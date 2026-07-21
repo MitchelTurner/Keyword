@@ -106,6 +106,9 @@ export default function NicheDetailPage() {
   const [selectedOppId, setSelectedOppId] = useState<string | null>(null);
   const [oppDetail, setOppDetail] = useState<OpportunityDetail | null>(null);
   const [decisionOpen, setDecisionOpen] = useState(false);
+  const [resultsView, setResultsView] = useState<"keywords" | "themes">(
+    "keywords",
+  );
 
   async function refresh() {
     const data = await api.getNiche(id);
@@ -626,92 +629,171 @@ export default function NicheDetailPage() {
         </div>
       )}
 
-      <div className="flex items-baseline justify-between gap-2 text-xs text-zinc-500">
-        <span>
-          <span className="tabular-nums text-zinc-300">{rows.length}</span>{" "}
-          opportunities
-          {assumptionsDirty && (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex rounded-md border border-zinc-800 bg-zinc-950/50 p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setResultsView("keywords")}
+            className={`rounded px-3 py-1.5 transition ${
+              resultsView === "keywords"
+                ? "bg-zinc-800 text-zinc-100"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            Keywords
+            <span className="ml-1.5 tabular-nums text-zinc-500">
+              {niche.keywords?.length ?? niche.keywordCount}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setResultsView("themes")}
+            className={`rounded px-3 py-1.5 transition ${
+              resultsView === "themes"
+                ? "bg-zinc-800 text-zinc-100"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            Themes
+            <span className="ml-1.5 tabular-nums text-zinc-500">
+              {rows.length}
+            </span>
+          </button>
+        </div>
+        <span className="text-xs text-zinc-600">
+          {resultsView === "keywords"
+            ? "Normal keyword results — volume, CPC, competition"
+            : "Clustered themes — click a row for details"}
+          {assumptionsDirty && resultsView === "themes" && (
             <span className="ml-2 text-amber-300/90">· preview floors</span>
           )}
         </span>
-        <span className="text-zinc-600">Click a row for decision brief</span>
       </div>
 
-      <div className="table-scroll max-h-[62vh]">
-        <table className="w-full min-w-[1280px] text-left text-sm">
-          <thead className="text-xs uppercase tracking-wide text-zinc-500">
-            <tr>
-              {(
-                [
-                  ["productDescription", "Product"],
-                  ["buyerType", "Buyer"],
-                  ["reviewStatus", "Status"],
-                ] as Array<[SortKey, string]>
-              ).map(([key, label]) => (
-                <th key={key} className="px-3 py-2.5 font-medium">
-                  <button
-                    type="button"
-                    onClick={() => toggleSort(key)}
-                    className="hover:text-zinc-300"
-                  >
-                    {label}
-                    {sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
-                  </button>
-                </th>
-              ))}
-              <th className="px-3 py-2.5 font-medium">Rubric</th>
-              {(
-                [
-                  ["trendScore", "Trend"],
-                  ["totalVolume", "Volume"],
-                  ["avgCpc", "Avg CPC"],
-                  ["impliedCac", "Implied CAC"],
-                  ["monthlyPriceFloor", "Mo. floor"],
-                  ["demandScore", "Demand"],
-                ] as Array<[SortKey, string]>
-              ).map(([key, label]) => (
-                <th key={key} className="px-3 py-2.5 font-medium">
-                  <button
-                    type="button"
-                    onClick={() => toggleSort(key)}
-                    className="hover:text-zinc-300"
-                  >
-                    {label}
-                    {sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
+      {resultsView === "keywords" ? (
+        <div className="table-scroll max-h-[62vh]">
+          <table className="w-full min-w-[720px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-wide text-zinc-500">
               <tr>
-                <td
-                  colSpan={10}
-                  className="px-3 py-10 text-center text-zinc-500"
-                >
-                  {IN_FLIGHT.has(niche.status)
-                    ? `Still ${niche.status.toLowerCase()} — ${niche.keywordCount} keywords, ${niche.enrichedKeywordCount} enriched. Opportunities appear after scoring.`
-                    : niche.status === "FAILED"
-                      ? "Pipeline failed before opportunities were created. Use Retry or Re-classify."
-                      : "No opportunities yet."}
-                </td>
+                <th className="px-3 py-2.5 font-medium">Keyword</th>
+                <th className="px-3 py-2.5 font-medium">Volume</th>
+                <th className="px-3 py-2.5 font-medium">CPC</th>
+                <th className="px-3 py-2.5 font-medium">Comp</th>
+                <th className="px-3 py-2.5 font-medium">12-mo</th>
               </tr>
-            )}
-            {rows.map((row) => (
-              <OpportunityTableRow
-                key={row.id}
-                row={row}
-                selected={selectedOppId === row.id}
-                preview={assumptionsDirty}
-                onSelect={() =>
-                  setSelectedOppId((cur) => (cur === row.id ? null : row.id))
-                }
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {(niche.keywords?.length ?? 0) === 0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-3 py-10 text-center text-zinc-500"
+                  >
+                    {IN_FLIGHT.has(niche.status)
+                      ? `Still ${niche.status.toLowerCase()} — keywords appear after expand/enrich.`
+                      : niche.status === "FAILED"
+                        ? "Pipeline failed before keywords were ready. Use Retry."
+                        : "No keywords yet."}
+                  </td>
+                </tr>
+              )}
+              {(niche.keywords ?? []).map((k) => (
+                <tr key={k.id} className="border-t border-zinc-800/80">
+                  <td className="px-3 py-2.5 text-zinc-100">{k.term}</td>
+                  <td className="px-3 py-2.5 tabular-nums text-zinc-300">
+                    {k.searchVolume == null ? "—" : num(k.searchVolume)}
+                  </td>
+                  <td className="px-3 py-2.5 tabular-nums text-zinc-300">
+                    {k.cpc == null ? "—" : money(k.cpc)}
+                  </td>
+                  <td className="px-3 py-2.5 tabular-nums text-zinc-300">
+                    {k.competition == null ? "—" : k.competition.toFixed(2)}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <Sparkline data={k.monthlyTrend} tone="flat" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="table-scroll max-h-[62vh]">
+          <table className="w-full min-w-[1280px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-wide text-zinc-500">
+              <tr>
+                {(
+                  [
+                    ["productDescription", "Theme"],
+                    ["buyerType", "Buyer"],
+                    ["reviewStatus", "Status"],
+                  ] as Array<[SortKey, string]>
+                ).map(([key, label]) => (
+                  <th key={key} className="px-3 py-2.5 font-medium">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(key)}
+                      className="hover:text-zinc-300"
+                    >
+                      {label}
+                      {sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                    </button>
+                  </th>
+                ))}
+                <th className="px-3 py-2.5 font-medium">Rubric</th>
+                {(
+                  [
+                    ["trendScore", "Trend"],
+                    ["totalVolume", "Volume"],
+                    ["avgCpc", "Avg CPC"],
+                    ["impliedCac", "Implied CAC"],
+                    ["monthlyPriceFloor", "Mo. floor"],
+                    ["demandScore", "Demand"],
+                  ] as Array<[SortKey, string]>
+                ).map(([key, label]) => (
+                  <th key={key} className="px-3 py-2.5 font-medium">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(key)}
+                      className="hover:text-zinc-300"
+                    >
+                      {label}
+                      {sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                    </button>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={10}
+                    className="px-3 py-10 text-center text-zinc-500"
+                  >
+                    {IN_FLIGHT.has(niche.status)
+                      ? `Still ${niche.status.toLowerCase()} — ${niche.keywordCount} keywords, ${niche.enrichedKeywordCount} enriched. Themes appear after scoring.`
+                      : niche.status === "FAILED"
+                        ? "Pipeline failed before themes were created. Use Retry or Re-classify."
+                        : "No themes yet."}
+                  </td>
+                </tr>
+              )}
+              {rows.map((row) => (
+                <OpportunityTableRow
+                  key={row.id}
+                  row={row}
+                  selected={selectedOppId === row.id}
+                  preview={assumptionsDirty}
+                  onSelect={() =>
+                    setSelectedOppId((cur) => (cur === row.id ? null : row.id))
+                  }
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {oppDetail && (
         <OpportunityDrawer

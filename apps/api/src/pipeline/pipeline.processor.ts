@@ -451,7 +451,9 @@ export class PipelineProcessor {
 
     let createdOpps = 0;
     for (const cluster of merged.values()) {
-      if (cluster.productDescription === "NOT_SOFTWARE") {
+      // Only drop pure noise — keep all normal keyword themes (not software-gated).
+      const label = cluster.productDescription.trim().toUpperCase();
+      if (label === "NOISE" || label === "NOT_SOFTWARE") {
         continue;
       }
 
@@ -489,7 +491,7 @@ export class PipelineProcessor {
 
     if (createdOpps === 0) {
       throw new Error(
-        `Classify produced 0 software opportunities from ${classifiable.length} keywords (all NOT_SOFTWARE or unmatched).`,
+        `Classify produced 0 themes from ${classifiable.length} keywords (all noise or unmatched).`,
       );
     }
 

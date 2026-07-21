@@ -214,7 +214,7 @@ export function buildBrief(input: BuildBriefInput): BuildBrief {
   } else if (input.monthlyPriceFloor < 49) {
     nextStep = "Pressure-test willingness to pay; floor may be too low for sales-led.";
   } else {
-    nextStep = "Pin it, skim top keywords, then spot-check SERPs for software intent.";
+    nextStep = "Pin it, skim top keywords, then spot-check SERPs for real demand.";
   }
 
   return { summary, whyRanks, nextStep };

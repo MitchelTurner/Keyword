@@ -16,14 +16,27 @@ export type ClassifiableKeyword = {
   competition: number;
 };
 
-const CLASSIFY_SYSTEM = `You analyze Google Ads keyword data to identify software products people are searching for. Given a list of search terms with monthly volume, CPC (USD), and competition (0-1), group them into distinct software products being sought. CPC reflects what advertisers pay per click — treat high CPC as a signal of commercial value and buyer pain.
+const CLASSIFY_SYSTEM = `You analyze Google Ads keyword research data. Group related search terms into topical themes / search intents — not limited to software.
+
+Given keywords with monthly volume, CPC (USD), and competition (0-1), cluster them into distinct themes a researcher would want to explore. CPC is a commercial-value signal, not a filter.
 
 Respond ONLY with JSON matching:
 {"clusters":[{"product_description":string,"buyer_type":"SMB"|"enterprise"|"government"|"consumer"|"prosumer","intent":"transactional"|"comparison"|"informational","pain_severity":1-5,"reasoning":string,"keywords":[string,...]}]}
 
-Rules: every input keyword appears in exactly one cluster. Keywords that are not seeking software (jobs, definitions, news) go in a cluster with product_description "NOT_SOFTWARE". No markdown, no prose outside the JSON.`;
+Field guidance:
+- product_description: short theme label (e.g. "best running shoes", "hoa fee disputes", "keto meal plans") — any topic, product, service, content, or local intent
+- buyer_type: who is most likely searching
+- intent: transactional / comparison / informational
+- pain_severity: 1-5 how commercially acute the need feels
+- keywords: exact input terms belonging to the theme
 
-const MERGE_SYSTEM = `You reconcile software product cluster labels that were produced independently from keyword chunks. Some labels describe the same product under different wording.
+Rules:
+- Every input keyword appears in exactly one cluster.
+- Do NOT discard non-software terms. Keep jobs, how-to, definitions, local, ecommerce, services, content, etc. in normal theme clusters.
+- Only use product_description "NOISE" for empty/gibberish/unusable tokens.
+- No markdown, no prose outside the JSON.`;
+
+const MERGE_SYSTEM = `You reconcile keyword theme labels that were produced independently from keyword chunks. Some labels describe the same theme under different wording.
 
 Respond ONLY with JSON matching:
 {"merges":[{"canonical":string,"aliases":[string,...]}]}
@@ -31,7 +44,7 @@ Respond ONLY with JSON matching:
 Rules:
 - Every input label appears exactly once: either as a canonical or inside some aliases list.
 - Labels that are unique stay as {"canonical":"<label>","aliases":[]}.
-- Use "NOT_SOFTWARE" as its own canonical when present; do not merge it into real products.
+- Keep "NOISE" as its own canonical when present; do not merge it into real themes.
 - No markdown, no prose outside the JSON.`;
 
 @Injectable()
@@ -76,7 +89,6 @@ export class ClaudeService {
     input_tokens?: number;
     output_tokens?: number;
   }): number {
-    // Approximate Sonnet pricing for cost logging (USD).
     const inTok = usage?.input_tokens ?? 0;
     const outTok = usage?.output_tokens ?? 0;
     return (inTok / 1_000_000) * 3 + (outTok / 1_000_000) * 15;
@@ -120,7 +132,7 @@ export class ClaudeService {
       competition: k.competition,
     }));
 
-    const user = `Classify these keywords:\n${JSON.stringify(payload)}`;
+    const user = `Cluster these keywords into research themes:\n${JSON.stringify(payload)}`;
     let text = await this.complete(CLASSIFY_SYSTEM, user, nicheId);
     let parsed = ClaudeClassificationSchema.safeParse(JSON.parse(text));
 
@@ -153,7 +165,7 @@ export class ClaudeService {
       };
     }
 
-    const user = `Cluster labels:\n${JSON.stringify(unique)}`;
+    const user = `Theme labels:\n${JSON.stringify(unique)}`;
     let text = await this.complete(MERGE_SYSTEM, user, nicheId);
     let parsed = ClaudeMergeSchema.safeParse(JSON.parse(text));
 

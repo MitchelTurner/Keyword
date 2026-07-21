@@ -142,6 +142,19 @@ export type NicheDetail = {
     failCount: number;
   };
   opportunities: OpportunityRow[];
+  keywords: Array<{
+    id: string;
+    term: string;
+    searchVolume: number | null;
+    cpc: number | null;
+    competition: number | null;
+    monthlyTrend: Array<{
+      year: number;
+      month: number;
+      search_volume?: number | null;
+    }> | null;
+    opportunityId: string | null;
+  }>;
 };
 
 export type OpportunityDetail = OpportunityRow & {

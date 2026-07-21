@@ -31,7 +31,7 @@ export default function PortfolioPage() {
     <div className="space-y-6 animate-fade-up">
       <PageHeader
         title="Portfolio"
-        description="Pinned, watching, and building opportunities across niches — sorted by demand score."
+        description="Pinned, watching, and building themes across niches — sorted by demand score."
       />
 
       {!loading && items.length > 0 && (
@@ -69,7 +69,7 @@ export default function PortfolioPage() {
         <table className="w-full min-w-[1080px] text-left text-sm">
           <thead className="text-xs uppercase tracking-wide text-zinc-500">
             <tr>
-              <th className="px-3 py-2.5">Product</th>
+              <th className="px-3 py-2.5">Theme</th>
               <th className="px-3 py-2.5">Niche</th>
               <th className="px-3 py-2.5">Status</th>
               <th className="px-3 py-2.5">Rubric</th>

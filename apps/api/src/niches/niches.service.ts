@@ -181,10 +181,24 @@ export class NichesService {
     });
     if (!niche) throw new NotFoundException("Niche not found");
 
-    const [costs, enrichedCount] = await Promise.all([
+    const [costs, enrichedCount, keywordRows] = await Promise.all([
       this.cost.totalsByNiche(id),
       this.prisma.keyword.count({
         where: { nicheId: id, searchVolume: { not: null } },
+      }),
+      this.prisma.keyword.findMany({
+        where: { nicheId: id },
+        orderBy: [{ searchVolume: "desc" }, { term: "asc" }],
+        take: 500,
+        select: {
+          id: true,
+          term: true,
+          searchVolume: true,
+          cpc: true,
+          competition: true,
+          monthlyTrend: true,
+          opportunityId: true,
+        },
       }),
     ]);
 
@@ -233,6 +247,15 @@ export class NichesService {
         },
       },
       opportunities,
+      keywords: keywordRows.map((k) => ({
+        id: k.id,
+        term: k.term,
+        searchVolume: k.searchVolume,
+        cpc: k.cpc,
+        competition: k.competition,
+        monthlyTrend: k.monthlyTrend,
+        opportunityId: k.opportunityId,
+      })),
     };
   }
 

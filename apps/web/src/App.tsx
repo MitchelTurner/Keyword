@@ -36,7 +36,7 @@ export default function App() {
             </nav>
           </div>
           <span className="hidden text-xs text-zinc-600 md:inline">
-            keyword → opportunity
+            keyword research
           </span>
         </div>
       </header>

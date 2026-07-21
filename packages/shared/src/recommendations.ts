@@ -8,152 +8,151 @@ export type CuratedNiche = {
 };
 
 /**
- * Curated B2B / prosumer wedges that tend to expand well in Prospector:
- * clear buyer, paid intent, and software-shaped pain.
+ * Curated starter seeds across general search demand — not software-only.
  */
 export const CURATED_NICHES: CuratedNiche[] = [
   {
+    id: "running-shoes",
+    seed: "running shoes",
+    category: "Ecommerce",
+    why: "High-volume commerce queries with clear comparison and brand angles.",
+    keywords: [
+      "best running shoes",
+      "trail running shoes",
+      "running shoes for flat feet",
+      "marathon racing shoes",
+    ],
+  },
+  {
+    id: "meal-prep",
+    seed: "meal prep",
+    category: "Food & health",
+    why: "Recurring consumer intent spanning recipes, delivery, and containers.",
+    keywords: [
+      "meal prep ideas",
+      "healthy meal prep",
+      "meal prep delivery",
+      "meal prep containers",
+    ],
+  },
+  {
+    id: "divorce-lawyer",
+    seed: "divorce lawyer",
+    category: "Local services",
+    why: "High CPC local/professional services with strong transactional intent.",
+    keywords: [
+      "family law attorney near me",
+      "uncontested divorce cost",
+      "child custody lawyer",
+      "divorce mediation",
+    ],
+  },
+  {
+    id: "airbnb-cleaning",
+    seed: "Airbnb cleaning",
+    category: "Local services",
+    why: "Service demand tied to short-term rentals and turnovers.",
+    keywords: [
+      "Airbnb turnover cleaning",
+      "vacation rental cleaning service",
+      "short term rental cleaner",
+      "Airbnb co host services",
+    ],
+  },
+  {
+    id: "solar-panels",
+    seed: "solar panels",
+    category: "Home",
+    why: "Big-ticket home improvement with research + quote intent.",
+    keywords: [
+      "solar panel cost",
+      "best solar companies",
+      "residential solar installation",
+      "solar tax credit",
+    ],
+  },
+  {
+    id: "personal-injury",
+    seed: "personal injury lawyer",
+    category: "Legal",
+    why: "Classic high-intent legal searches with expensive clicks.",
+    keywords: [
+      "car accident attorney",
+      "slip and fall lawyer",
+      "truck accident lawyer",
+      "free consultation injury lawyer",
+    ],
+  },
+  {
+    id: "dog-training",
+    seed: "dog training",
+    category: "Pets",
+    why: "Mix of local services, courses, and product-adjacent queries.",
+    keywords: [
+      "puppy training classes",
+      "dog training near me",
+      "aggressive dog training",
+      "online dog training course",
+    ],
+  },
+  {
+    id: "wedding-photography",
+    seed: "wedding photography",
+    category: "Events",
+    why: "Seasonal but high-consideration local creative services.",
+    keywords: [
+      "wedding photographer near me",
+      "wedding photography packages",
+      "elopement photographer",
+      "engagement photo ideas",
+    ],
+  },
+  {
+    id: "credit-repair",
+    seed: "credit repair",
+    category: "Finance",
+    why: "Consumer finance with strong commercial and comparison language.",
+    keywords: [
+      "how to fix credit score",
+      "best credit repair companies",
+      "credit repair cost",
+      "remove collections from credit",
+    ],
+  },
+  {
+    id: "moving-company",
+    seed: "moving company",
+    category: "Local services",
+    why: "Transactional local demand with quote and price intent.",
+    keywords: [
+      "movers near me",
+      "long distance moving companies",
+      "apartment movers cost",
+      "packing services movers",
+    ],
+  },
+  {
     id: "hoa-management",
     seed: "HOA management",
-    category: "Property ops",
-    why: "Fragmented board workflows, recurring billing, and compliance create sticky SMB/HOA software demand.",
+    category: "Property",
+    why: "Still a strong ops niche — boards, fees, and compliance searches.",
     keywords: [
-      "HOA accounting software",
+      "HOA fees explained",
       "community association management",
-      "HOA board portal",
-      "HOA violation tracking",
+      "HOA violation rules",
+      "HOA board responsibilities",
     ],
   },
   {
-    id: "dental-billing",
-    seed: "dental billing",
-    category: "Healthcare admin",
-    why: "Clinics pay for claim accuracy and AR follow-up; high CPC often signals willingness to buy.",
+    id: "dental-implants",
+    seed: "dental implants",
+    category: "Healthcare",
+    why: "High CPC medical/cosmetic procedures with cost research.",
     keywords: [
-      "dental practice management",
-      "dental insurance verification",
-      "dental claims denial",
-      "dental patient billing",
-    ],
-  },
-  {
-    id: "freight-broker",
-    seed: "freight broker software",
-    category: "Logistics",
-    why: "Brokers juggle load boards, carrier compliance, and invoicing — classic workflow software wedge.",
-    keywords: [
-      "TMS for brokers",
-      "carrier onboarding software",
-      "load board automation",
-      "freight factoring software",
-    ],
-  },
-  {
-    id: "construction-estimating",
-    seed: "construction estimating",
-    category: "Trades",
-    why: "Estimators and GCs still live in spreadsheets; takeoff + bid tools monetize well.",
-    keywords: [
-      "construction takeoff software",
-      "contractor bidding software",
-      "job costing software",
-      "construction proposal software",
-    ],
-  },
-  {
-    id: "nonprofit-grant",
-    seed: "grant management software",
-    category: "Nonprofit / gov",
-    why: "Grant tracking and reporting are painful for nonprofits and local agencies with budget.",
-    keywords: [
-      "nonprofit fundraising CRM",
-      "foundation grant tracking",
-      "federal grant compliance",
-      "donor management software",
-    ],
-  },
-  {
-    id: "property-maintenance",
-    seed: "property maintenance software",
-    category: "Property ops",
-    why: "Work orders, vendors, and tenant requests are recurring ops problems for managers.",
-    keywords: [
-      "work order management software",
-      "landlord maintenance app",
-      "facility maintenance CMMS",
-      "tenant request portal",
-    ],
-  },
-  {
-    id: "law-firm-intake",
-    seed: "law firm intake software",
-    category: "Legal",
-    why: "Intake, conflicts, and matter opening are high-pain workflows with enterprise/SMB buyers.",
-    keywords: [
-      "legal practice management",
-      "client intake forms lawyers",
-      "conflict check software",
-      "law firm CRM",
-    ],
-  },
-  {
-    id: "veterinary-practice",
-    seed: "veterinary practice management",
-    category: "Healthcare admin",
-    why: "Clinics need scheduling, reminders, inventory, and billing in one ops layer.",
-    keywords: [
-      "vet clinic software",
-      "pet hospital scheduling",
-      "veterinary inventory management",
-      "vet client communication",
-    ],
-  },
-  {
-    id: "inspection-scheduling",
-    seed: "home inspection software",
-    category: "Field services",
-    why: "Inspectors need scheduling, report writing, and payments — mobile-first SaaS angle.",
-    keywords: [
-      "inspection report software",
-      "field service scheduling",
-      "home inspector CRM",
-      "property inspection checklist",
-    ],
-  },
-  {
-    id: "church-management",
-    seed: "church management software",
-    category: "Nonprofit / gov",
-    why: "Membership, giving, and event ops are sticky for mid-size congregations.",
-    keywords: [
-      "church giving software",
-      "ministry management software",
-      "church member database",
-      "nonprofit event registration",
-    ],
-  },
-  {
-    id: "restaurant-inventory",
-    seed: "restaurant inventory software",
-    category: "Hospitality",
-    why: "Food cost control and ordering are measurable ROI problems for multi-unit operators.",
-    keywords: [
-      "restaurant purchasing software",
-      "food cost management",
-      "restaurant recipe costing",
-      "bar inventory management",
-    ],
-  },
-  {
-    id: "hvac-dispatch",
-    seed: "HVAC dispatch software",
-    category: "Field services",
-    why: "Dispatch, tech routing, and job costing convert well for home-services SMBs.",
-    keywords: [
-      "plumbing dispatch software",
-      "field service management HVAC",
-      "technician scheduling software",
-      "service agreement software",
+      "dental implant cost",
+      "all on 4 dental implants",
+      "dental implants near me",
+      "implant dentist",
     ],
   },
 ];
@@ -233,7 +232,6 @@ export function rankFollowOnKeywords(
     if (!isSeedablePhrase(c.term)) continue;
     const key = normalizeTerm(c.term);
     if (used.has(key)) continue;
-    // Skip if it's basically the niche seed itself
     if (key === normalizeTerm(c.nicheSeed)) continue;
     const prev = best.get(key);
     if (!prev || (c.volume ?? 0) > (prev.volume ?? 0)) {

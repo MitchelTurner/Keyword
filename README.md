@@ -1,8 +1,8 @@
 # Prospector
 
-Internal research tool that mines Google Ads keyword data to find underserved software niches.
+Internal keyword research tool that expands a seed into related Google Ads keywords, enriches volume/CPC/competition, clusters themes, and ranks demand.
 
-**Core loop:** seed niche → expand keywords (DataForSEO) → enrich volume/CPC/competition → classify into product clusters (Claude) → score & rank → review in dashboard.
+**Core loop:** seed → expand keywords (DataForSEO) → enrich volume/CPC/competition → cluster themes (Claude) → score & rank → review keywords + themes in the dashboard.
 
 ## Stack
 
@@ -28,7 +28,7 @@ pnpm dev:web   # :5173
 CLI trigger (API must be running to process the queue):
 
 ```bash
-pnpm cli:niche -- --seed "invoice software" --wait
+pnpm cli:niche -- --seed "running shoes" --wait
 ```
 
 ## Environment

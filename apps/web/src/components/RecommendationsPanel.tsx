@@ -156,7 +156,7 @@ export default function RecommendationsPanel({
       hint={
         followOnCount > 0
           ? `${followOnCount} from your existing keyword data · use ← → to cycle`
-          : "Use ← → to cycle niches and keywords"
+          : "General search seeds — not limited to software"
       }
     >
       {openNiches.length > 0 && (

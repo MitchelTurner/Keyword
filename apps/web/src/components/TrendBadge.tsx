@@ -25,7 +25,9 @@ export default function TrendBadge({ trend }: { trend: TrendInfo }) {
       className={`inline-flex items-center gap-1 text-xs tabular-nums ${STYLES[trend.direction]}`}
       title={`Trend score ${trend.score}`}
     >
-      <span aria-hidden>{ARROWS[trend.direction]}</span>
+      <span aria-hidden className="font-medium">
+        {ARROWS[trend.direction]}
+      </span>
       <span className="capitalize">{trend.direction}</span>
       {pct && <span className="text-zinc-500">{pct}</span>}
     </span>

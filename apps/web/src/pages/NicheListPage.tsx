@@ -2,6 +2,10 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, money, type CostEstimate, type NicheListItem } from "../api";
 import StatusBadge from "../components/StatusBadge";
+import PageHeader from "../components/PageHeader";
+import EmptyState from "../components/EmptyState";
+import Panel from "../components/Panel";
+import { relativeTime } from "../lib/format";
 
 const IN_FLIGHT = new Set([
   "PENDING",
@@ -22,6 +26,11 @@ export default function NicheListPage() {
 
   const anyInFlight = useMemo(
     () => niches.some((n) => IN_FLIGHT.has(n.status)),
+    [niches],
+  );
+
+  const runningCount = useMemo(
+    () => niches.filter((n) => IN_FLIGHT.has(n.status)).length,
     [niches],
   );
 
@@ -80,102 +89,123 @@ export default function NicheListPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-zinc-100">Niches</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Seed a term, expand the keyword universe, and rank software product
-          opportunities.
-        </p>
-      </div>
+    <div className="space-y-6 animate-fade-up">
+      <PageHeader
+        title="Niches"
+        description="Seed a term, expand the keyword universe, and rank software product opportunities."
+      />
 
-      <form
-        onSubmit={onSubmit}
-        className="flex flex-col gap-2 sm:flex-row sm:items-center"
-      >
-        <input
-          value={seedTerm}
-          onChange={(e) => setSeedTerm(e.target.value)}
-          placeholder="Enter a seed term"
-          className="w-full flex-1 rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none ring-emerald-500/40 focus:ring"
-        />
-        <button
-          type="submit"
-          disabled={submitting || !seedTerm.trim()}
-          className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-zinc-950 disabled:opacity-50"
+      <Panel>
+        <form
+          onSubmit={onSubmit}
+          className="flex flex-col gap-3 sm:flex-row sm:items-stretch"
         >
-          {submitting ? "Starting…" : "Run"}
-        </button>
-      </form>
+          <label className="block flex-1">
+            <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-zinc-500">
+              Seed term
+            </span>
+            <input
+              value={seedTerm}
+              onChange={(e) => setSeedTerm(e.target.value)}
+              placeholder="e.g. HOA management, dental billing…"
+              autoFocus
+              className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2.5 text-sm text-zinc-100 outline-none ring-emerald-500/30 transition focus:border-emerald-700 focus:ring"
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={submitting || !seedTerm.trim()}
+              className="w-full rounded-md bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+            >
+              {submitting ? "Starting…" : "Run pipeline"}
+            </button>
+          </div>
+        </form>
 
-      {estimate && (
-        <div className="rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
-          <span className="text-zinc-300">
-            Est. run cost: {money(estimate.low, 2)} – {money(estimate.high, 2)}
+        {estimate && (
+          <div className="mt-3 border-t border-zinc-800/80 pt-3 text-xs text-zinc-500">
+            <span className="text-zinc-300">
+              Est. run: {money(estimate.low, 2)} – {money(estimate.high, 2)}
+            </span>
+            <span className="mx-2 text-zinc-700">·</span>
+            expand {money(estimate.breakdown.expandLow, 2)}–
+            {money(estimate.breakdown.expandHigh, 2)}
+            <span className="mx-2 text-zinc-700">·</span>
+            enrich {money(estimate.breakdown.enrichLow, 2)}–
+            {money(estimate.breakdown.enrichHigh, 2)}
+            <span className="mx-2 text-zinc-700">·</span>
+            classify {money(estimate.breakdown.classifyLow, 2)}–
+            {money(estimate.breakdown.classifyHigh, 2)}
+            <p className="mt-1 text-zinc-600">{estimate.note}</p>
+          </div>
+        )}
+      </Panel>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+        <div className="flex items-center gap-3">
+          <span>
+            <span className="tabular-nums text-zinc-300">{niches.length}</span>{" "}
+            niches
           </span>
-          <span className="mx-2 text-zinc-600">·</span>
-          expand {money(estimate.breakdown.expandLow, 2)}–
-          {money(estimate.breakdown.expandHigh, 2)}
-          <span className="mx-2 text-zinc-600">·</span>
-          enrich {money(estimate.breakdown.enrichLow, 2)}–
-          {money(estimate.breakdown.enrichHigh, 2)}
-          <span className="mx-2 text-zinc-600">·</span>
-          classify {money(estimate.breakdown.classifyLow, 2)}–
-          {money(estimate.breakdown.classifyHigh, 2)}
-          <div className="mt-1 text-zinc-600">{estimate.note}</div>
+          {runningCount > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-emerald-400/90">
+              <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-emerald-400" />
+              {runningCount} running
+            </span>
+          )}
         </div>
-      )}
-
-      <div className="flex items-center justify-between text-xs text-zinc-500">
-        <span>{niches.length} niches</span>
-        <span>API spend logged: {money(globalCost, 4)}</span>
+        <span>
+          API spend{" "}
+          <span className="tabular-nums text-zinc-300">
+            {money(globalCost, 4)}
+          </span>
+        </span>
       </div>
 
       {error && (
-        <div className="rounded border border-rose-900 bg-rose-950/40 px-3 py-2 text-sm text-rose-300">
+        <div className="rounded-md border border-rose-900 bg-rose-950/40 px-3 py-2 text-sm text-rose-300">
           {error}
         </div>
       )}
 
-      <div className="overflow-x-auto rounded border border-zinc-800">
+      <div className="table-scroll">
         <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="bg-zinc-900/80 text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="text-xs uppercase tracking-wide text-zinc-500">
             <tr>
-              <th className="px-3 py-2 font-medium">Seed</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Keywords</th>
-              <th className="px-3 py-2 font-medium">Opportunities</th>
-              <th className="px-3 py-2 font-medium">Updated</th>
-              <th className="px-3 py-2 font-medium" />
+              <th className="px-3 py-2.5 font-medium">Seed</th>
+              <th className="px-3 py-2.5 font-medium">Status</th>
+              <th className="px-3 py-2.5 font-medium">Keywords</th>
+              <th className="px-3 py-2.5 font-medium">Opportunities</th>
+              <th className="px-3 py-2.5 font-medium">Updated</th>
+              <th className="px-3 py-2.5 font-medium" />
             </tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="px-3 py-8 text-center text-zinc-500"
-                >
-                  Loading niches…
-                </td>
-              </tr>
-            )}
+            {loading &&
+              Array.from({ length: 4 }).map((_, i) => (
+                <tr key={i} className="border-t border-zinc-800/80">
+                  <td className="px-3 py-3" colSpan={6}>
+                    <div className="skeleton h-4 w-full max-w-md" />
+                  </td>
+                </tr>
+              ))}
             {!loading && niches.length === 0 && (
               <tr>
-                <td
-                  colSpan={6}
-                  className="px-3 py-8 text-center text-zinc-500"
-                >
-                  No niches yet. Enter a seed term to begin.
+                <td colSpan={6}>
+                  <EmptyState
+                    title="No niches yet"
+                    description="Enter a seed term above to expand keywords and surface product opportunities."
+                  />
                 </td>
               </tr>
             )}
             {niches.map((n) => (
               <tr key={n.id} className="border-t border-zinc-800/80">
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   <Link
                     to={`/niches/${n.id}`}
-                    className="font-medium text-emerald-300 hover:underline"
+                    className="font-medium text-emerald-300 transition hover:text-emerald-200"
                   >
                     {n.seedTerm}
                   </Link>
@@ -185,20 +215,23 @@ export default function NicheListPage() {
                     </div>
                   )}
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   <StatusBadge status={n.status} />
                 </td>
-                <td className="px-3 py-2 tabular-nums text-zinc-300">
+                <td className="px-3 py-2.5 tabular-nums text-zinc-300">
                   {n.keywordCount}
                 </td>
-                <td className="px-3 py-2 tabular-nums text-zinc-300">
+                <td className="px-3 py-2.5 tabular-nums text-zinc-300">
                   {n.opportunityCount}
                 </td>
-                <td className="px-3 py-2 text-xs text-zinc-500">
-                  {new Date(n.updatedAt).toLocaleString()}
+                <td
+                  className="px-3 py-2.5 text-xs text-zinc-500"
+                  title={new Date(n.updatedAt).toLocaleString()}
+                >
+                  {relativeTime(n.updatedAt)}
                 </td>
-                <td className="px-3 py-2 text-right">
-                  <div className="flex justify-end gap-2">
+                <td className="px-3 py-2.5 text-right">
+                  <div className="flex justify-end gap-3">
                     {n.status === "FAILED" && (
                       <button
                         type="button"
@@ -211,7 +244,7 @@ export default function NicheListPage() {
                     <button
                       type="button"
                       onClick={() => onDelete(n.id)}
-                      className="text-xs text-zinc-500 hover:text-rose-300"
+                      className="text-xs text-zinc-600 transition hover:text-rose-300"
                     >
                       Delete
                     </button>

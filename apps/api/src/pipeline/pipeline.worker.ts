@@ -35,7 +35,13 @@ export class PipelineWorker
         async (job) => this.processor.process(job),
         {
           connection: redisConnection(redisUrl),
-          concurrency: 2,
+          concurrency: 1,
+          // Expand→enrich→classify→score runs in one job and can exceed the
+          // default 30s lock (Claude batches), which stalls the worker and
+          // leaves niches stuck on "Pipeline running".
+          lockDuration: 15 * 60 * 1000,
+          stalledInterval: 60 * 1000,
+          maxStalledCount: 2,
         },
       );
 

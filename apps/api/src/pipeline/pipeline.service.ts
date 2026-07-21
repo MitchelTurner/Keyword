@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { NicheStatus } from "@prisma/client";
 import { Queue } from "bullmq";
 import { PrismaService } from "../prisma/prisma.service";
@@ -14,6 +14,14 @@ const STATUS_TO_JOB: Record<NicheStatus, PipelineJobName | null> = {
   DONE: null,
 };
 
+const IN_FLIGHT: NicheStatus[] = [
+  "PENDING",
+  "EXPANDING",
+  "ENRICHING",
+  "CLASSIFYING",
+  "SCORING",
+];
+
 @Injectable()
 export class PipelineService {
   constructor(
@@ -22,11 +30,13 @@ export class PipelineService {
   ) {}
 
   async enqueue(jobName: PipelineJobName, nicheId: string) {
+    // Stable-ish id so rapid retries don't stack duplicate active jobs.
+    const jobId = `${jobName}:${nicheId}:${Date.now()}`;
     await this.queue.add(
       jobName,
       { nicheId },
       {
-        jobId: `${jobName}:${nicheId}:${Date.now()}`,
+        jobId,
         removeOnComplete: 100,
         removeOnFail: 200,
         attempts: 1,
@@ -46,16 +56,27 @@ export class PipelineService {
     await this.enqueue("classify", nicheId);
   }
 
+  /**
+   * Resume a failed or stuck in-flight niche from the best inferred stage.
+   */
   async retryFailed(nicheId: string) {
     const niche = await this.prisma.niche.findUniqueOrThrow({
       where: { id: nicheId },
     });
 
-    if (niche.status !== "FAILED") {
-      throw new Error("Niche is not in FAILED status");
+    const stuckInFlight =
+      IN_FLIGHT.includes(niche.status) &&
+      Date.now() - niche.updatedAt.getTime() > 2 * 60 * 1000;
+
+    if (niche.status !== "FAILED" && !stuckInFlight) {
+      if (IN_FLIGHT.includes(niche.status)) {
+        throw new BadRequestException(
+          "Pipeline still running. Wait 2 minutes without progress, then resume.",
+        );
+      }
+      throw new BadRequestException("Niche is not failed or stuck");
     }
 
-    // Infer stage from last successful progress via keyword/opportunity presence.
     const [keywordCount, enrichedCount, oppCount] = await Promise.all([
       this.prisma.keyword.count({ where: { nicheId } }),
       this.prisma.keyword.count({

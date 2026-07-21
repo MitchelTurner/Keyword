@@ -27,6 +27,8 @@ const EnvelopeSchema = z.object({
 
 export type EnrichedKeywordRow = {
   keyword: string;
+  /** Original term we requested (Google Ads may lowercase / spell-correct). */
+  requestedKeyword?: string;
   searchVolume: number | null;
   cpc: number | null;
   competition: number | null;
@@ -212,8 +214,54 @@ export class DataForSeoService {
 
       const items = extractSearchVolumeItems(json.tasks?.[0]?.result ?? []);
       let parseFailures = 0;
-      for (const raw of items) {
-        const parsed = SearchVolumeItemSchema.safeParse(raw);
+      // Match response rows back to requested terms (API lowercases / may spell-correct).
+      const claimed = new Set<number>();
+      for (let reqIdx = 0; reqIdx < chunk.length; reqIdx++) {
+        const requested = chunk[reqIdx]!;
+        const reqLower = requested.toLowerCase();
+        let matchIdx = items.findIndex((raw, i) => {
+          if (claimed.has(i)) return false;
+          const parsed = SearchVolumeItemSchema.safeParse(raw);
+          if (!parsed.success) return false;
+          const kw = parsed.data.keyword.trim().toLowerCase();
+          const spell =
+            typeof (parsed.data as { spell?: unknown }).spell === "string"
+              ? String((parsed.data as { spell?: string }).spell)
+                  .trim()
+                  .toLowerCase()
+              : "";
+          return kw === reqLower || spell === reqLower;
+        });
+        if (matchIdx < 0 && reqIdx < items.length && !claimed.has(reqIdx)) {
+          matchIdx = reqIdx; // positional fallback
+        }
+        if (matchIdx < 0) continue;
+
+        const parsed = SearchVolumeItemSchema.safeParse(items[matchIdx]);
+        if (!parsed.success) {
+          parseFailures += 1;
+          continue;
+        }
+        claimed.add(matchIdx);
+        const item = parsed.data;
+        rows.push({
+          keyword: item.keyword,
+          requestedKeyword: requested,
+          searchVolume: item.search_volume ?? null,
+          cpc: item.cpc ?? null,
+          competition: normalizeCompetition(
+            item.competition,
+            item.competition_index,
+          ),
+          monthlyTrend: item.monthly_searches ?? null,
+          raw: item,
+        });
+      }
+
+      // Keep any leftover parsed items that did not map (better than dropping).
+      for (let i = 0; i < items.length; i++) {
+        if (claimed.has(i)) continue;
+        const parsed = SearchVolumeItemSchema.safeParse(items[i]);
         if (!parsed.success) {
           parseFailures += 1;
           continue;

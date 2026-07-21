@@ -257,9 +257,19 @@ export default function NicheDetailPage() {
     }
   }
 
+  const [resuming, setResuming] = useState(false);
+
   async function onRetry() {
-    await api.retry(id);
-    await refresh();
+    setResuming(true);
+    setError(null);
+    try {
+      await api.retry(id);
+      await refresh();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setResuming(false);
+    }
   }
 
   async function onReclassify() {
@@ -367,19 +377,37 @@ export default function NicheDetailPage() {
               Re-classify
             </button>
           )}
-          {niche.status === "FAILED" && (
+          {(niche.status === "FAILED" ||
+            (IN_FLIGHT.has(niche.status) &&
+              Date.now() - new Date(niche.updatedAt).getTime() >
+                2 * 60 * 1000)) && (
             <button
               type="button"
               onClick={onRetry}
-              className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 transition hover:bg-amber-400"
+              disabled={resuming}
+              className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 transition hover:bg-amber-400 disabled:opacity-50"
             >
-              Retry failed stage
+              {niche.status === "FAILED"
+                ? resuming
+                  ? "Retrying…"
+                  : "Retry failed stage"
+                : resuming
+                  ? "Resuming…"
+                  : "Resume pipeline"}
             </button>
           )}
         </div>
       </div>
 
-      <PipelineProgress status={niche.status} />
+      <PipelineProgress
+        status={niche.status}
+        keywordCount={niche.keywordCount}
+        enrichedKeywordCount={niche.enrichedKeywordCount}
+        opportunityCount={niche.opportunities.length}
+        updatedAt={niche.updatedAt}
+        onResume={onRetry}
+        resuming={resuming}
+      />
 
       <RelatedSeeds seedTerm={niche.seedTerm} />
 
@@ -664,8 +692,10 @@ export default function NicheDetailPage() {
                   className="px-3 py-10 text-center text-zinc-500"
                 >
                   {IN_FLIGHT.has(niche.status)
-                    ? "Pipeline running — opportunities will appear when scoring finishes."
-                    : "No opportunities yet."}
+                    ? `Still ${niche.status.toLowerCase()} — ${niche.keywordCount} keywords, ${niche.enrichedKeywordCount} enriched. Opportunities appear after scoring.`
+                    : niche.status === "FAILED"
+                      ? "Pipeline failed before opportunities were created. Use Retry or Re-classify."
+                      : "No opportunities yet."}
                 </td>
               </tr>
             )}

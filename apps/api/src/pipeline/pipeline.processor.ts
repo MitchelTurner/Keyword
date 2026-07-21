@@ -8,7 +8,6 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { DataForSeoService } from "../dataforseo/dataforseo.service";
 import { ClaudeService } from "../claude/claude.service";
-import { PipelineService } from "./pipeline.service";
 import type { PipelineJobData, PipelineJobName } from "./pipeline.constants";
 
 type WorkingCluster = {
@@ -20,6 +19,8 @@ type WorkingCluster = {
   keywords: Set<string>;
 };
 
+const STAGES: PipelineJobName[] = ["expand", "enrich", "classify", "score"];
+
 @Injectable()
 export class PipelineProcessor {
   private readonly logger = new Logger(PipelineProcessor.name);
@@ -28,7 +29,6 @@ export class PipelineProcessor {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(DataForSeoService) private readonly dataForSeo: DataForSeoService,
     @Inject(ClaudeService) private readonly claude: ClaudeService,
-    @Inject(PipelineService) private readonly pipeline: PipelineService,
   ) {}
 
   async process(job: Job<PipelineJobData>) {
@@ -36,29 +36,9 @@ export class PipelineProcessor {
     const name = job.name as PipelineJobName;
 
     try {
-      switch (name) {
-        case "expand":
-          await this.expand(nicheId);
-          await this.pipeline.enqueue("enrich", nicheId);
-          break;
-        case "enrich":
-          await this.enrich(nicheId);
-          await this.pipeline.enqueue("classify", nicheId);
-          break;
-        case "classify":
-          await this.classify(nicheId);
-          await this.pipeline.enqueue("score", nicheId);
-          break;
-        case "score":
-          await this.score(nicheId);
-          break;
-        // v2 stub:
-        // case "serp":
-        //   await this.serp(nicheId);
-        //   break;
-        default:
-          throw new Error(`Unknown job type: ${name}`);
-      }
+      // Run remaining stages in-process so we don't depend on Redis to
+      // re-deliver each hop (a common cause of niches stuck "running").
+      await this.runFrom(nicheId, name);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Niche ${nicheId} job ${name} failed: ${message}`);
@@ -67,6 +47,37 @@ export class PipelineProcessor {
         data: { status: "FAILED", error: message },
       });
       throw err;
+    }
+  }
+
+  async runFrom(nicheId: string, start: PipelineJobName) {
+    const startIdx = STAGES.indexOf(start);
+    if (startIdx < 0) {
+      throw new Error(`Unknown job type: ${start}`);
+    }
+
+    for (let i = startIdx; i < STAGES.length; i++) {
+      const stage = STAGES[i]!;
+      this.logger.log(
+        JSON.stringify({ event: "pipeline_stage_start", nicheId, stage }),
+      );
+      switch (stage) {
+        case "expand":
+          await this.expand(nicheId);
+          break;
+        case "enrich":
+          await this.enrich(nicheId);
+          break;
+        case "classify":
+          await this.classify(nicheId);
+          break;
+        case "score":
+          await this.score(nicheId);
+          break;
+      }
+      this.logger.log(
+        JSON.stringify({ event: "pipeline_stage_done", nicheId, stage }),
+      );
     }
   }
 
@@ -108,6 +119,13 @@ export class PipelineProcessor {
         data: toInsert.map((term) => ({ nicheId, term })),
         skipDuplicates: true,
       });
+    }
+
+    const count = await this.prisma.keyword.count({ where: { nicheId } });
+    if (count === 0) {
+      throw new Error(
+        `Expand produced no keywords for seed "${niche.seedTerm}"`,
+      );
     }
 
     await this.prisma.niche.update({
@@ -203,15 +221,27 @@ export class PipelineProcessor {
       );
     }
 
+    let applied = 0;
     if (termsNeedingFetch.length > 0) {
       const rows = await this.dataForSeo.enrichKeywords(
         termsNeedingFetch,
         nicheId,
       );
 
-      for (const row of rows) {
-        const id = byTerm.get(row.keyword.toLowerCase());
+      const unmatchedIds = new Set(
+        termsNeedingFetch
+          .map((t) => byTerm.get(t.toLowerCase()))
+          .filter((id): id is string => Boolean(id)),
+      );
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]!;
+        const requested = row.requestedKeyword ?? termsNeedingFetch[i];
+        const id =
+          (requested ? byTerm.get(requested.toLowerCase()) : undefined) ??
+          byTerm.get(row.keyword.toLowerCase());
         if (!id) continue;
+
         await this.prisma.keyword.update({
           where: { id },
           data: {
@@ -225,7 +255,57 @@ export class PipelineProcessor {
             raw: row.raw as Prisma.InputJsonValue,
           },
         });
+        unmatchedIds.delete(id);
+        applied += 1;
       }
+
+      // Positional fallback for any leftover request terms / response rows.
+      if (unmatchedIds.size > 0) {
+        const leftoverTerms = termsNeedingFetch.filter((t) => {
+          const id = byTerm.get(t.toLowerCase());
+          return id != null && unmatchedIds.has(id);
+        });
+        for (let i = 0; i < leftoverTerms.length && i < rows.length; i++) {
+          const term = leftoverTerms[i]!;
+          const id = byTerm.get(term.toLowerCase());
+          const row = rows[i];
+          if (!id || !row || !unmatchedIds.has(id)) continue;
+          await this.prisma.keyword.update({
+            where: { id },
+            data: {
+              searchVolume: row.searchVolume,
+              cpc: row.cpc,
+              competition: row.competition,
+              monthlyTrend:
+                row.monthlyTrend === null
+                  ? Prisma.DbNull
+                  : (row.monthlyTrend as Prisma.InputJsonValue),
+              raw: row.raw as Prisma.InputJsonValue,
+            },
+          });
+          unmatchedIds.delete(id);
+          applied += 1;
+        }
+      }
+
+      this.logger.log(
+        JSON.stringify({
+          event: "enrich_applied",
+          nicheId,
+          requested: termsNeedingFetch.length,
+          returned: rows.length,
+          applied,
+        }),
+      );
+    }
+
+    const enrichedCount = await this.prisma.keyword.count({
+      where: { nicheId, searchVolume: { not: null } },
+    });
+    if (enrichedCount === 0) {
+      throw new Error(
+        `Enrich finished with 0 volume rows (fetched ${termsNeedingFetch.length}, applied ${applied}). Check DataForSEO credentials/response.`,
+      );
     }
 
     await this.prisma.niche.update({
@@ -324,7 +404,6 @@ export class PipelineProcessor {
       for (const alias of m.aliases) {
         aliasToCanonical.set(alias, m.canonical);
       }
-      // ensure every label maps somewhere even if Claude omitted it
       aliasToCanonical.set(m.canonical, m.canonical);
     }
     for (const label of labels) {
@@ -347,7 +426,6 @@ export class PipelineProcessor {
         });
       } else {
         for (const kw of cluster.keywords) existing.keywords.add(kw);
-        // Prefer higher pain / longer reasoning when merging.
         if (cluster.painSeverity > existing.painSeverity) {
           existing.painSeverity = cluster.painSeverity;
           existing.reasoning = cluster.reasoning;
@@ -357,6 +435,7 @@ export class PipelineProcessor {
       }
     }
 
+    let createdOpps = 0;
     for (const cluster of merged.values()) {
       if (cluster.productDescription === "NOT_SOFTWARE") {
         continue;
@@ -386,11 +465,18 @@ export class PipelineProcessor {
           demandScore: 0,
         },
       });
+      createdOpps += 1;
 
       await this.prisma.keyword.updateMany({
         where: { id: { in: memberIds } },
         data: { opportunityId: opportunity.id },
       });
+    }
+
+    if (createdOpps === 0) {
+      throw new Error(
+        `Classify produced 0 software opportunities from ${classifiable.length} keywords (all NOT_SOFTWARE or unmatched).`,
+      );
     }
 
     for (const p of preserve) {
@@ -442,6 +528,10 @@ export class PipelineProcessor {
         },
       },
     });
+
+    if (opportunities.length === 0) {
+      throw new Error(`Score found 0 opportunities for niche ${nicheId}`);
+    }
 
     const buyerWeights =
       niche.buyerWeights && typeof niche.buyerWeights === "object"

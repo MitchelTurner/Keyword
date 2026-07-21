@@ -589,9 +589,7 @@ export class NichesService {
   async retry(id: string) {
     const niche = await this.prisma.niche.findUnique({ where: { id } });
     if (!niche) throw new NotFoundException("Niche not found");
-    if (niche.status !== "FAILED") {
-      throw new BadRequestException("Only FAILED niches can be retried");
-    }
+    // Supports FAILED niches and stuck in-flight niches (see PipelineService).
     const job = await this.pipeline.retryFailed(id);
     return { id, retriedJob: job };
   }

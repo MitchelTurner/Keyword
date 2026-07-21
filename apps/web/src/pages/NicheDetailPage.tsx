@@ -717,16 +717,30 @@ function RelatedSeeds({ seedTerm }: { seedTerm: string }) {
   const curated = CURATED_NICHES.find(
     (n) => n.seed.toLowerCase() === seedTerm.trim().toLowerCase(),
   );
-  const related = curated?.keywords ?? [];
-  // Fallback: suggest other curated seeds in a similar category when exact match missing
-  const neighbors =
-    related.length > 0
-      ? related
-      : CURATED_NICHES.filter(
-          (n) => n.seed.toLowerCase() !== seedTerm.trim().toLowerCase(),
-        )
-          .slice(0, 6)
-          .map((n) => n.seed);
+  const neighbors = useMemo(() => {
+    if (curated) {
+      const sameCategory = CURATED_NICHES.filter(
+        (n) => n.category === curated.category,
+      ).flatMap((n) =>
+        n.id === curated.id
+          ? n.keywords
+          : [n.seed, ...n.keywords],
+      );
+      return [...new Set(sameCategory)];
+    }
+    return CURATED_NICHES.flatMap((n) => [n.seed, ...n.keywords]).filter(
+      (t) => t.toLowerCase() !== seedTerm.trim().toLowerCase(),
+    );
+  }, [curated, seedTerm]);
+
+  const pageSize = 8;
+  const pageCount = Math.max(1, Math.ceil(neighbors.length / pageSize));
+  const [page, setPage] = useState(0);
+  const pageItems = neighbors.slice(page * pageSize, page * pageSize + pageSize);
+
+  useEffect(() => {
+    setPage(0);
+  }, [seedTerm]);
 
   if (neighbors.length === 0) return null;
 
@@ -739,8 +753,32 @@ function RelatedSeeds({ seedTerm }: { seedTerm: string }) {
           : "Curated niches worth expanding"
       }
     >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] text-zinc-600">
+          {pageCount > 1 ? `${page + 1}/${pageCount} · ` : ""}
+          {neighbors.length} seeds
+        </span>
+        {pageCount > 1 && (
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setPage((p) => (p - 1 + pageCount) % pageCount)}
+              className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:border-zinc-500"
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage((p) => (p + 1) % pageCount)}
+              className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:border-zinc-500"
+            >
+              →
+            </button>
+          </div>
+        )}
+      </div>
       <div className="flex flex-wrap gap-1.5">
-        {neighbors.map((term) => (
+        {pageItems.map((term) => (
           <Link
             key={term}
             to={`/?seed=${encodeURIComponent(term)}`}

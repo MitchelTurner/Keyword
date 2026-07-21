@@ -198,7 +198,7 @@ export function filterUnusedCurated(
 
 export function curatedKeywordSuggestions(
   existingSeeds: string[],
-  limit = 24,
+  limit = 96,
 ): RecommendationKeyword[] {
   const used = new Set(existingSeeds.map(normalizeTerm));
   const out: RecommendationKeyword[] = [];
@@ -224,7 +224,7 @@ export function curatedKeywordSuggestions(
 export function rankFollowOnKeywords(
   candidates: FollowOnCandidate[],
   existingSeeds: string[],
-  limit = 16,
+  limit = 40,
 ): RecommendationKeyword[] {
   const used = new Set(existingSeeds.map(normalizeTerm));
   const best = new Map<string, FollowOnCandidate>();
@@ -280,7 +280,7 @@ export function buildRecommendations(input: {
 
   return {
     niches,
-    keywords: [...followOns, ...curatedKeywords].slice(0, 32),
+    keywords: [...followOns, ...curatedKeywords].slice(0, 96),
     followOns,
   };
 }

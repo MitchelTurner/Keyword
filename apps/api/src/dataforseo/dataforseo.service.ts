@@ -4,7 +4,6 @@ import {
   KeywordIdeaItemSchema,
   MIN_KEYWORD_VOLUME,
   SearchVolumeItemSchema,
-  filterRelevantKeywords,
   normalizeCompetition,
   type SearchVolumeItem,
 } from "@prospector/shared";
@@ -163,37 +162,47 @@ export class DataForSeoService {
   }
 
   /**
-   * Expand a seed into relevant keywords.
-   * Prefer Keyword Suggestions (must contain the seed phrase) over Keyword Ideas
-   * (same Ads category — often off-topic junk).
+   * Pull broad keyword-database candidates for a seed.
+   * Does NOT require the seed phrase inside each term — Claude filters relevance.
    */
   async expandKeywords(seedTerm: string, nicheId?: string): Promise<string[]> {
     const seed = seedTerm.trim();
-    const suggested = await this.fetchKeywordSuggestions(seed, nicheId);
-
-    let pool = suggested;
-    if (pool.length < 20) {
-      // Small fallback for thin seeds — still relevance-filtered afterward.
-      const ideas = await this.fetchKeywordIdeas(seed, nicheId).catch((err) => {
+    const [suggested, ideas] = await Promise.all([
+      this.fetchKeywordSuggestions(seed, nicheId).catch((err) => {
         this.logger.warn(
-          `keyword_ideas fallback failed: ${err instanceof Error ? err.message : String(err)}`,
+          `keyword_suggestions failed: ${err instanceof Error ? err.message : String(err)}`,
         );
         return [] as string[];
-      });
-      pool = [...pool, ...ideas];
+      }),
+      this.fetchKeywordIdeas(seed, nicheId).catch((err) => {
+        this.logger.warn(
+          `keyword_ideas failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return [] as string[];
+      }),
+    ]);
+
+    const seen = new Set<string>();
+    const pool: string[] = [];
+    for (const term of [...suggested, ...ideas]) {
+      const key = term.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pool.push(term);
+      if (pool.length >= 150) break;
     }
 
-    const relevant = filterRelevantKeywords(pool, seed, 200);
     this.logger.log(
       JSON.stringify({
-        event: "expand_keywords",
+        event: "expand_candidates",
         nicheId,
         seed,
         suggested: suggested.length,
-        kept: relevant.length,
+        ideas: ideas.length,
+        pool: pool.length,
       }),
     );
-    return relevant;
+    return pool;
   }
 
   private extractLabKeywords(items: unknown[]): string[] {
@@ -217,11 +226,11 @@ export class DataForSeoService {
         location_code: this.locationCode(),
         language_code: this.languageCode(),
         include_seed_keyword: true,
-        // Keep phrase intact so results stay on-seed (e.g. "running shoes …").
-        exact_match: true,
+        // Allow related phrasing; AI decides topical relevance afterward.
+        exact_match: false,
         filters: ["keyword_info.search_volume", ">=", MIN_KEYWORD_VOLUME],
         order_by: ["keyword_info.search_volume,desc"],
-        limit: 200,
+        limit: 100,
       },
     ];
 

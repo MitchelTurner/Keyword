@@ -66,6 +66,15 @@ describe("niche pipeline integration (mocked externals)", () => {
       })
       .overrideProvider(ClaudeService)
       .useValue({
+        expandKeywords: vi.fn(
+          async (_seed: string, candidates: string[] = []) => [
+            "invoice software",
+            "best invoicing software",
+            "invoice ocr software",
+            "accounts payable automation",
+            ...candidates.slice(0, 2),
+          ],
+        ),
         classifyChunk: vi.fn(async (keywords: Array<{ term: string }>) => ({
           clusters: [
             {

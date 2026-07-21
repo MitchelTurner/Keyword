@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   ClaudeClassificationSchema,
+  ClaudeKeywordExpandSchema,
   ClaudeMergeSchema,
   type ClaudeClassification,
   type ClaudeMerge,
@@ -46,6 +47,22 @@ Rules:
 - Labels that are unique stay as {"canonical":"<label>","aliases":[]}.
 - Keep "NOISE" as its own canonical when present; do not merge it into real themes.
 - No markdown, no prose outside the JSON.`;
+
+const EXPAND_SYSTEM = `You generate Google-search keyword lists for market research.
+
+Given a seed topic, return real search queries people type that are clearly relevant to that topic. Relevance matters more than lexical overlap — synonyms, related intents, comparisons, problems, and adjacent demand are good. The seed words do NOT need to appear in every keyword.
+
+Respond ONLY with JSON:
+{"keywords":["phrase one","phrase two",...]}
+
+Rules:
+- 40–80 keywords, English, lowercase when natural
+- Each keyword 2–7 words, realistic search queries (not marketing slogans)
+- Stay on-topic for the seed; drop unrelated category bleed
+- Include a mix of head terms, long-tails, comparisons, and commercial/informational intents
+- If a candidate list is provided, include every candidate that is relevant and invent additional relevant keywords
+- Do not include duplicates
+- No markdown, no prose outside the JSON`;
 
 @Injectable()
 export class ClaudeService {
@@ -119,6 +136,74 @@ export class ClaudeService {
     });
 
     return this.stripFences(this.extractText(message.content));
+  }
+
+  /**
+   * Generate relevant keywords for a seed. Optionally cherry-pick from DFS candidates.
+   * Seed phrase is NOT required inside each keyword — topical relevance is.
+   */
+  async expandKeywords(
+    seedTerm: string,
+    candidates: string[] = [],
+    nicheId?: string,
+  ): Promise<string[]> {
+    const seed = seedTerm.trim();
+    const uniqueCandidates = [
+      ...new Set(
+        candidates
+          .map((c) => c.trim().replace(/\s+/g, " "))
+          .filter((c) => c.length > 0),
+      ),
+    ].slice(0, 120);
+
+    const user = uniqueCandidates.length
+      ? `Seed topic: ${JSON.stringify(seed)}\n\nCandidate keywords from keyword databases (keep only relevant ones, then add more):\n${JSON.stringify(uniqueCandidates)}`
+      : `Seed topic: ${JSON.stringify(seed)}\n\nGenerate a relevant keyword list for this topic.`;
+
+    const tryParse = (raw: string) => {
+      try {
+        return ClaudeKeywordExpandSchema.safeParse(JSON.parse(raw));
+      } catch (err) {
+        return {
+          success: false as const,
+          error: {
+            message:
+              err instanceof Error ? err.message : "JSON parse failed",
+          },
+        };
+      }
+    };
+
+    let text = await this.complete(EXPAND_SYSTEM, user, nicheId);
+    let parsed = tryParse(text);
+
+    if (!parsed.success) {
+      this.logger.warn(`Claude keyword expand parse failed, retrying once`);
+      text = await this.complete(
+        EXPAND_SYSTEM,
+        `${user}\n\nPrevious response failed validation: ${parsed.error.message}. Return corrected JSON only.`,
+        nicheId,
+      );
+      parsed = tryParse(text);
+      if (!parsed.success) {
+        throw new Error(
+          `Claude keyword expand JSON invalid: ${parsed.error.message}`,
+        );
+      }
+    }
+
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of parsed.data.keywords) {
+      const term = raw.trim().replace(/\s+/g, " ");
+      if (!term) continue;
+      const key = term.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(term);
+      if (out.length >= 120) break;
+    }
+    return out;
   }
 
   async classifyChunk(

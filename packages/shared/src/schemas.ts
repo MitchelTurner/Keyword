@@ -130,6 +130,12 @@ export const ClaudeMergeSchema = z.object({
 });
 export type ClaudeMerge = z.infer<typeof ClaudeMergeSchema>;
 
+/** AI-generated / AI-filtered keyword expand list */
+export const ClaudeKeywordExpandSchema = z.object({
+  keywords: z.array(z.string().trim().min(1)).min(1).max(200),
+});
+export type ClaudeKeywordExpand = z.infer<typeof ClaudeKeywordExpandSchema>;
+
 /** DataForSEO wrapper envelope helpers */
 export const DataForSeoTaskMetaSchema = z.object({
   status_code: z.number(),

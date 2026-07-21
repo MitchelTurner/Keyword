@@ -106,9 +106,36 @@ export class PipelineProcessor {
       data: { status: "EXPANDING", error: null },
     });
 
-    const ideas = await this.dataForSeo.expandKeywords(
-      niche.seedTerm,
-      nicheId,
+    const seed = niche.seedTerm.trim();
+
+    // Broad DFS candidates (optional) → Claude generates/filters a relevant list.
+    // Seed words are NOT required inside each keyword; topical relevance is.
+    const dfsCandidates = await this.dataForSeo
+      .expandKeywords(seed, nicheId)
+      .catch((err) => {
+        this.logger.warn(
+          `DFS expand candidates failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return [] as string[];
+      });
+
+    const aiKeywords = await this.claude
+      .expandKeywords(seed, dfsCandidates, nicheId)
+      .catch((err) => {
+        this.logger.warn(
+          `Claude expand failed, using DFS candidates: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return dfsCandidates;
+      });
+
+    this.logger.log(
+      JSON.stringify({
+        event: "expand_ai_keywords",
+        nicheId,
+        seed,
+        dfsCandidates: dfsCandidates.length,
+        aiKeywords: aiKeywords.length,
+      }),
     );
 
     const existing = await this.prisma.keyword.findMany({
@@ -117,11 +144,10 @@ export class PipelineProcessor {
     });
     const existingLower = new Set(existing.map((k) => k.term.toLowerCase()));
 
-    const seed = niche.seedTerm.trim();
-    const candidates = [seed, ...ideas];
+    const candidates = [seed, ...aiKeywords];
     const toInsert: string[] = [];
     for (const term of candidates) {
-      const normalized = term.trim();
+      const normalized = term.trim().replace(/\s+/g, " ");
       if (!normalized) continue;
       const key = normalized.toLowerCase();
       if (existingLower.has(key)) continue;

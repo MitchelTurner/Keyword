@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ClaudeClassificationSchema,
+  ClaudeKeywordExpandSchema,
   CreateNicheSchema,
   SearchVolumeItemSchema,
   UpdateNicheAssumptionsSchema,
@@ -40,6 +41,15 @@ describe("UpdateOpportunitySchema", () => {
         notes: "worth building",
       }),
     ).toMatchObject({ pinned: true, reviewStatus: "watching" });
+  });
+});
+
+describe("ClaudeKeywordExpandSchema", () => {
+  it("accepts a keyword list", () => {
+    const parsed = ClaudeKeywordExpandSchema.parse({
+      keywords: ["running shoes", "best trail runners", "marathon racing flats"],
+    });
+    expect(parsed.keywords).toHaveLength(3);
   });
 });
 

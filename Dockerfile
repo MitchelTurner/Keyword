@@ -3,22 +3,27 @@ RUN corepack enable && apt-get update && apt-get install -y openssl ca-certifica
 WORKDIR /app
 
 FROM base AS deps
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
-RUN pnpm install --frozen-lockfile=false
+RUN corepack prepare pnpm@10.33.3 --activate \
+ && pnpm install --frozen-lockfile=false
 
 FROM deps AS build
 COPY . .
 RUN pnpm --filter @prospector/shared build \
  && pnpm --filter @prospector/api prisma:generate \
  && pnpm --filter @prospector/api build \
- && pnpm --filter @prospector/web build
+ && pnpm --filter @prospector/web build \
+ && test -f apps/api/dist/main.js \
+ && test -f apps/web/dist/index.html
 
 FROM base AS runner
 ENV NODE_ENV=production
+ENV HOST=0.0.0.0
 WORKDIR /app
 COPY --from=build /app /app
+RUN chmod +x scripts/start.sh
 EXPOSE 3000
-CMD ["sh", "-c", "pnpm --filter @prospector/api prisma:deploy && pnpm --filter @prospector/api start:prod"]
+CMD ["sh", "scripts/start.sh"]

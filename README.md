@@ -76,4 +76,10 @@ pnpm test
 
 ## Railway
 
-Provision Postgres + Redis plugins, set the env vars above, and deploy. The API process runs BullMQ workers in-process (v1). Serve the web build from Railway static hosting or a second service pointed at `apps/web`.
+1. Create a service from this repo (root directory).
+2. Add **Postgres** and **Redis** plugins — Railway injects `DATABASE_URL` and `REDIS_URL`.
+3. Set secrets: `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD`, `ANTHROPIC_API_KEY`.
+4. Deploy. Start command runs migrations then `node apps/api/dist/main.js` on `0.0.0.0:$PORT`.
+5. Health check: `GET /health`. The API also serves the web UI from `apps/web/dist`.
+
+If you see “Application failed to respond”, check deploy logs for missing `DATABASE_URL` / `REDIS_URL` or a failed `prisma migrate deploy`.

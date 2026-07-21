@@ -7,7 +7,7 @@ import { PipelineService } from "./pipeline.service";
 import { PipelineProcessor } from "./pipeline.processor";
 import { PipelineWorker } from "./pipeline.worker";
 import { NICHE_PIPELINE_QUEUE, PIPELINE_QUEUE } from "./pipeline.constants";
-import { redisConnection } from "../redis";
+import { redisConnection, resolveRedisUrl } from "../redis";
 
 @Module({
   imports: [DataForSeoModule, ClaudeModule],
@@ -21,7 +21,7 @@ import { redisConnection } from "../redis";
       useFactory: (config: ConfigService) => {
         return new Queue(NICHE_PIPELINE_QUEUE, {
           connection: redisConnection(
-            config.get<string>("REDIS_URL") ?? "redis://localhost:6379",
+            resolveRedisUrl(config.get<string>("REDIS_URL")),
           ),
         });
       },

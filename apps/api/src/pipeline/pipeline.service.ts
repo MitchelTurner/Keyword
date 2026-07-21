@@ -42,6 +42,10 @@ export class PipelineService {
     await this.enqueue("score", nicheId);
   }
 
+  async enqueueClassify(nicheId: string) {
+    await this.enqueue("classify", nicheId);
+  }
+
   async retryFailed(nicheId: string) {
     const niche = await this.prisma.niche.findUniqueOrThrow({
       where: { id: nicheId },

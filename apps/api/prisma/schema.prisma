@@ -46,6 +46,7 @@ model Keyword {
 
   @@unique([nicheId, term])
   @@index([nicheId])
+  @@index([term])
 }
 
 model Opportunity {
@@ -64,10 +65,14 @@ model Opportunity {
   annualPriceFloor   Float
   monthlyPriceFloor  Float
   demandScore        Float
+  pinned             Boolean   @default(false)
+  notes              String    @default("")
+  reviewStatus       String    @default("none") // none | watching | building | passed
   keywords           Keyword[]
   createdAt          DateTime  @default(now())
 
   @@index([nicheId])
+  @@index([pinned])
 }
 
 model ApiCostLog {

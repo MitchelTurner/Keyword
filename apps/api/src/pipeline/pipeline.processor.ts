@@ -124,33 +124,108 @@ export class PipelineProcessor {
 
     const keywords = await this.prisma.keyword.findMany({
       where: { nicheId },
-      select: { id: true, term: true },
+      select: { id: true, term: true, searchVolume: true },
     });
 
     const byTerm = new Map(
       keywords.map((k) => [k.term.toLowerCase(), k.id] as const),
     );
-    const rows = await this.dataForSeo.enrichKeywords(
-      keywords.map((k) => k.term),
-      nicheId,
-    );
 
-    for (const row of rows) {
-      const id = byTerm.get(row.keyword.toLowerCase());
-      if (!id) continue;
-      await this.prisma.keyword.update({
-        where: { id },
-        data: {
-          searchVolume: row.searchVolume,
-          cpc: row.cpc,
-          competition: row.competition,
-          monthlyTrend:
-            row.monthlyTrend === null
-              ? Prisma.DbNull
-              : (row.monthlyTrend as Prisma.InputJsonValue),
-          raw: row.raw as Prisma.InputJsonValue,
-        },
-      });
+    // Cross-niche cache: reuse previously enriched metrics for the same term.
+    const unenriched = keywords.filter((k) => k.searchVolume == null);
+    const termsNeedingFetch: string[] = [];
+    let cacheHits = 0;
+
+    if (unenriched.length > 0) {
+      const lowers = unenriched.map((k) => k.term.toLowerCase());
+      const cachedRows = await this.prisma.$queryRaw<
+        Array<{
+          term: string;
+          searchVolume: number | null;
+          cpc: number | null;
+          competition: number | null;
+          monthlyTrend: Prisma.JsonValue;
+          raw: Prisma.JsonValue;
+        }>
+      >`
+        SELECT DISTINCT ON (lower(term))
+          term,
+          "searchVolume",
+          cpc,
+          competition,
+          "monthlyTrend",
+          raw
+        FROM "Keyword"
+        WHERE "nicheId" <> ${nicheId}
+          AND "searchVolume" IS NOT NULL
+          AND lower(term) = ANY(${lowers})
+        ORDER BY lower(term), "createdAt" DESC
+      `;
+
+      const cacheByTerm = new Map(
+        cachedRows.map((r) => [r.term.toLowerCase(), r] as const),
+      );
+
+      for (const kw of unenriched) {
+        const cached = cacheByTerm.get(kw.term.toLowerCase());
+        if (!cached) {
+          termsNeedingFetch.push(kw.term);
+          continue;
+        }
+        await this.prisma.keyword.update({
+          where: { id: kw.id },
+          data: {
+            searchVolume: cached.searchVolume,
+            cpc: cached.cpc,
+            competition: cached.competition,
+            monthlyTrend:
+              cached.monthlyTrend === null
+                ? Prisma.DbNull
+                : (cached.monthlyTrend as Prisma.InputJsonValue),
+            raw:
+              cached.raw === null
+                ? Prisma.DbNull
+                : (cached.raw as Prisma.InputJsonValue),
+          },
+        });
+        cacheHits += 1;
+      }
+    }
+
+    if (cacheHits > 0) {
+      this.logger.log(
+        JSON.stringify({
+          event: "keyword_cache_hits",
+          nicheId,
+          cacheHits,
+          remaining: termsNeedingFetch.length,
+        }),
+      );
+    }
+
+    if (termsNeedingFetch.length > 0) {
+      const rows = await this.dataForSeo.enrichKeywords(
+        termsNeedingFetch,
+        nicheId,
+      );
+
+      for (const row of rows) {
+        const id = byTerm.get(row.keyword.toLowerCase());
+        if (!id) continue;
+        await this.prisma.keyword.update({
+          where: { id },
+          data: {
+            searchVolume: row.searchVolume,
+            cpc: row.cpc,
+            competition: row.competition,
+            monthlyTrend:
+              row.monthlyTrend === null
+                ? Prisma.DbNull
+                : (row.monthlyTrend as Prisma.InputJsonValue),
+            raw: row.raw as Prisma.InputJsonValue,
+          },
+        });
+      }
     }
 
     await this.prisma.niche.update({
@@ -163,6 +238,24 @@ export class PipelineProcessor {
     await this.prisma.niche.update({
       where: { id: nicheId },
       data: { status: "CLASSIFYING", error: null },
+    });
+
+    // Preserve operator pins/notes across re-classify when product labels match.
+    const preserve = await this.prisma.opportunity.findMany({
+      where: {
+        nicheId,
+        OR: [
+          { pinned: true },
+          { notes: { not: "" } },
+          { reviewStatus: { not: "none" } },
+        ],
+      },
+      select: {
+        productDescription: true,
+        pinned: true,
+        notes: true,
+        reviewStatus: true,
+      },
     });
 
     // Idempotent: clear prior opportunities and unlink keywords.
@@ -291,6 +384,27 @@ export class PipelineProcessor {
       await this.prisma.keyword.updateMany({
         where: { id: { in: memberIds } },
         data: { opportunityId: opportunity.id },
+      });
+    }
+
+    for (const p of preserve) {
+      const match = await this.prisma.opportunity.findFirst({
+        where: {
+          nicheId,
+          productDescription: {
+            equals: p.productDescription,
+            mode: "insensitive",
+          },
+        },
+      });
+      if (!match) continue;
+      await this.prisma.opportunity.update({
+        where: { id: match.id },
+        data: {
+          pinned: p.pinned,
+          notes: p.notes,
+          reviewStatus: p.reviewStatus,
+        },
       });
     }
 

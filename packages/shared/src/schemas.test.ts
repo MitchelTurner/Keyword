@@ -3,6 +3,7 @@ import {
   ClaudeClassificationSchema,
   CreateNicheSchema,
   UpdateNicheAssumptionsSchema,
+  UpdateOpportunitySchema,
 } from "./schemas";
 
 describe("CreateNicheSchema", () => {
@@ -25,6 +26,18 @@ describe("UpdateNicheAssumptionsSchema", () => {
     expect(UpdateNicheAssumptionsSchema.parse({ convRate: 0.02 })).toEqual({
       convRate: 0.02,
     });
+  });
+});
+
+describe("UpdateOpportunitySchema", () => {
+  it("accepts pin and review status", () => {
+    expect(
+      UpdateOpportunitySchema.parse({
+        pinned: true,
+        reviewStatus: "watching",
+        notes: "worth building",
+      }),
+    ).toMatchObject({ pinned: true, reviewStatus: "watching" });
   });
 });
 

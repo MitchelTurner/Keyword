@@ -44,6 +44,29 @@ export type UpdateNicheAssumptionsDto = z.infer<
   typeof UpdateNicheAssumptionsSchema
 >;
 
+export const ReviewStatusSchema = z.enum([
+  "none",
+  "watching",
+  "building",
+  "passed",
+]);
+export type ReviewStatus = z.infer<typeof ReviewStatusSchema>;
+
+export const UpdateOpportunitySchema = z
+  .object({
+    pinned: z.boolean().optional(),
+    notes: z.string().max(5000).optional(),
+    reviewStatus: ReviewStatusSchema.optional(),
+  })
+  .refine(
+    (v) =>
+      v.pinned !== undefined ||
+      v.notes !== undefined ||
+      v.reviewStatus !== undefined,
+    { message: "At least one field is required" },
+  );
+export type UpdateOpportunityDto = z.infer<typeof UpdateOpportunitySchema>;
+
 export const MonthlyTrendPointSchema = z.object({
   year: z.number().int(),
   month: z.number().int().min(1).max(12),

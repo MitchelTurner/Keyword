@@ -47,15 +47,26 @@ pnpm cli:niche -- --seed "invoice software" --wait
 ## API
 
 ```
+GET    /niches/cost-estimate
 POST   /niches
 GET    /niches
 GET    /niches/:id
+GET    /niches/:id/export.csv
 GET    /niches/:id/opportunities/:oppId
-PATCH  /niches/:id          { convRate?, ltvCacRatio? }
+PATCH  /niches/:id/opportunities/:oppId   { pinned?, notes?, reviewStatus? }
+PATCH  /niches/:id                        { convRate?, ltvCacRatio? }
+POST   /niches/:id/reclassify             # Claude only — uses stored Keyword.raw
 POST   /niches/:id/retry
 DELETE /niches/:id
 GET    /health
 ```
+
+### Operator quick wins
+- **Cost estimate** shown before Run (planning range for expand/enrich/classify)
+- **Cross-niche keyword cache** — enrich skips DataForSEO for terms already fetched
+- **Re-classify** from stored metrics (no Ads re-fetch); pins/notes preserved on label match
+- **CSV export** of opportunities + member keywords
+- **Pin / notes / review status** (`watching` | `building` | `passed`) on opportunities
 
 ## Tests
 

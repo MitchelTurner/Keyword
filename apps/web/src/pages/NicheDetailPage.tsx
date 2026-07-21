@@ -19,7 +19,8 @@ type SortKey =
   | "monthlyPriceFloor"
   | "painSeverity"
   | "productDescription"
-  | "buyerType";
+  | "buyerType"
+  | "reviewStatus";
 
 const IN_FLIGHT = new Set([
   "PENDING",
@@ -28,6 +29,13 @@ const IN_FLIGHT = new Set([
   "CLASSIFYING",
   "SCORING",
 ]);
+
+const REVIEW_OPTIONS = [
+  { value: "none", label: "—" },
+  { value: "watching", label: "Watching" },
+  { value: "building", label: "Building" },
+  { value: "passed", label: "Passed" },
+] as const;
 
 export default function NicheDetailPage() {
   const { id = "" } = useParams();
@@ -75,6 +83,8 @@ export default function NicheDetailPage() {
     if (!niche) return [];
     const sorted = [...niche.opportunities];
     sorted.sort((a, b) => {
+      // Pinned always float to top unless sorting by pin implicitly via default order
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       const av = a[sortKey];
       const bv = b[sortKey];
       if (typeof av === "string" && typeof bv === "string") {
@@ -94,7 +104,13 @@ export default function NicheDetailPage() {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      setSortDir(key === "productDescription" || key === "buyerType" ? "asc" : "desc");
+      setSortDir(
+        key === "productDescription" ||
+          key === "buyerType" ||
+          key === "reviewStatus"
+          ? "asc"
+          : "desc",
+      );
     }
   }
 
@@ -120,6 +136,39 @@ export default function NicheDetailPage() {
     await refresh();
   }
 
+  async function onReclassify() {
+    if (
+      !confirm(
+        "Re-classify from stored keyword data? This uses Claude (no DataForSEO re-fetch). Pins/notes are kept when product labels match.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    try {
+      await api.reclassify(id);
+      await refresh();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function onOppUpdated(updated: OpportunityRow) {
+    setNiche((prev) =>
+      prev
+        ? {
+            ...prev,
+            opportunities: prev.opportunities.map((o) =>
+              o.id === updated.id ? { ...o, ...updated } : o,
+            ),
+          }
+        : prev,
+    );
+    setOppDetail((prev) =>
+      prev && prev.id === updated.id ? { ...prev, ...updated } : prev,
+    );
+  }
+
   if (!niche) {
     return (
       <div className="text-sm text-zinc-500">
@@ -127,6 +176,10 @@ export default function NicheDetailPage() {
       </div>
     );
   }
+
+  const canReclassify =
+    (niche.status === "DONE" || niche.status === "FAILED") &&
+    niche.enrichedKeywordCount > 0;
 
   return (
     <div className="space-y-6">
@@ -139,6 +192,7 @@ export default function NicheDetailPage() {
           <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-zinc-400">
             <StatusBadge status={niche.status} />
             <span>{num(niche.keywordCount)} keywords</span>
+            <span>{num(niche.enrichedKeywordCount)} enriched</span>
             <span>
               cost {money(niche.costs.total, 4)}
               {Object.keys(niche.costs.byProvider).length > 0 && (
@@ -157,15 +211,32 @@ export default function NicheDetailPage() {
             <p className="mt-2 text-sm text-rose-400">{niche.error}</p>
           )}
         </div>
-        {niche.status === "FAILED" && (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-zinc-950"
+        <div className="flex flex-wrap gap-2">
+          <a
+            href={api.exportCsvUrl(id)}
+            className="rounded border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:border-zinc-500"
           >
-            Retry failed stage
-          </button>
-        )}
+            Export CSV
+          </a>
+          {canReclassify && (
+            <button
+              type="button"
+              onClick={onReclassify}
+              className="rounded border border-emerald-800 bg-emerald-950/40 px-3 py-1.5 text-sm text-emerald-300"
+            >
+              Re-classify
+            </button>
+          )}
+          {niche.status === "FAILED" && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-zinc-950"
+            >
+              Retry failed stage
+            </button>
+          )}
+        </div>
       </div>
 
       <form
@@ -213,13 +284,14 @@ export default function NicheDetailPage() {
       )}
 
       <div className="overflow-x-auto rounded border border-zinc-800">
-        <table className="w-full min-w-[980px] text-left text-sm">
+        <table className="w-full min-w-[1040px] text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase tracking-wide text-zinc-500">
             <tr>
               {(
                 [
                   ["productDescription", "Product"],
                   ["buyerType", "Buyer"],
+                  ["reviewStatus", "Status"],
                   ["painSeverity", "Pain"],
                   ["totalVolume", "Volume"],
                   ["avgCpc", "Avg CPC"],
@@ -245,7 +317,7 @@ export default function NicheDetailPage() {
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-3 py-8 text-center text-zinc-500"
                 >
                   {IN_FLIGHT.has(niche.status)
@@ -270,8 +342,10 @@ export default function NicheDetailPage() {
 
       {oppDetail && (
         <OpportunityDrawer
+          nicheId={id}
           detail={oppDetail}
           onClose={() => setSelectedOppId(null)}
+          onUpdated={onOppUpdated}
         />
       )}
     </div>
@@ -293,12 +367,23 @@ function OpportunityTableRow({
       className={`cursor-pointer border-t border-zinc-800/80 hover:bg-zinc-900/60 ${selected ? "bg-zinc-900" : ""}`}
     >
       <td className="px-3 py-2 font-medium text-zinc-100">
-        {row.productDescription}
+        <span className="inline-flex items-center gap-1.5">
+          {row.pinned && (
+            <span className="text-amber-400" title="Pinned">
+              ★
+            </span>
+          )}
+          {row.productDescription}
+        </span>
         <div className="text-[11px] text-zinc-500">
           {row.keywordCount} keywords · {row.intent}
+          {row.notes ? " · has notes" : ""}
         </div>
       </td>
       <td className="px-3 py-2 text-zinc-300">{row.buyerType}</td>
+      <td className="px-3 py-2 text-zinc-400">
+        {row.reviewStatus === "none" ? "—" : row.reviewStatus}
+      </td>
       <td className="px-3 py-2 tabular-nums">{row.painSeverity}</td>
       <td className="px-3 py-2 tabular-nums">{num(row.totalVolume)}</td>
       <td className="px-3 py-2 tabular-nums">{money(row.avgCpc)}</td>
@@ -312,17 +397,53 @@ function OpportunityTableRow({
 }
 
 function OpportunityDrawer({
+  nicheId,
   detail,
   onClose,
+  onUpdated,
 }: {
+  nicheId: string;
   detail: OpportunityDetail;
   onClose: () => void;
+  onUpdated: (row: OpportunityRow) => void;
 }) {
+  const [notes, setNotes] = useState(detail.notes);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNotes(detail.notes);
+  }, [detail.id, detail.notes]);
+
+  async function patch(body: {
+    pinned?: boolean;
+    notes?: string;
+    reviewStatus?: string;
+  }) {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const updated = await api.updateOpportunity(nicheId, detail.id, body);
+      onUpdated(updated);
+    } catch (err) {
+      setSaveError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="rounded border border-zinc-700 bg-zinc-950/90 p-4 shadow-2xl shadow-black/40">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">{detail.productDescription}</h2>
+          <h2 className="text-lg font-semibold">
+            {detail.pinned && (
+              <span className="mr-1 text-amber-400" title="Pinned">
+                ★
+              </span>
+            )}
+            {detail.productDescription}
+          </h2>
           <p className="mt-1 text-sm text-zinc-400">
             {detail.buyerType} · {detail.intent} · pain {detail.painSeverity}/5
           </p>
@@ -334,6 +455,60 @@ function OpportunityDrawer({
         >
           Close
         </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => patch({ pinned: !detail.pinned })}
+          className={`rounded border px-3 py-1.5 text-sm ${
+            detail.pinned
+              ? "border-amber-700 bg-amber-950/40 text-amber-300"
+              : "border-zinc-700 text-zinc-300"
+          }`}
+        >
+          {detail.pinned ? "Unpin" : "Pin"}
+        </button>
+        <label className="text-xs text-zinc-500">
+          Review status
+          <select
+            value={detail.reviewStatus}
+            disabled={saving}
+            onChange={(e) => patch({ reviewStatus: e.target.value })}
+            className="mt-1 block rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+          >
+            {REVIEW_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <label className="mt-3 block text-xs text-zinc-500">
+        Notes
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+          className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+          placeholder="Why this matters, competitors, next steps…"
+        />
+      </label>
+      <div className="mt-1 flex items-center gap-2">
+        <button
+          type="button"
+          disabled={saving || notes === detail.notes}
+          onClick={() => patch({ notes })}
+          className="rounded bg-zinc-200 px-3 py-1 text-xs font-medium text-zinc-900 disabled:opacity-40"
+        >
+          Save notes
+        </button>
+        {saveError && (
+          <span className="text-xs text-rose-400">{saveError}</span>
+        )}
       </div>
 
       <p className="mt-3 text-sm leading-relaxed text-zinc-300">

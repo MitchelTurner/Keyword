@@ -28,6 +28,21 @@ export type NicheListItem = {
   updatedAt: string;
 };
 
+export type CostEstimate = {
+  assumedKeywords: number;
+  low: number;
+  high: number;
+  breakdown: {
+    expandLow: number;
+    expandHigh: number;
+    enrichLow: number;
+    enrichHigh: number;
+    classifyLow: number;
+    classifyHigh: number;
+  };
+  note: string;
+};
+
 export type OpportunityRow = {
   id: string;
   productDescription: string;
@@ -42,6 +57,9 @@ export type OpportunityRow = {
   annualPriceFloor: number;
   monthlyPriceFloor: number;
   demandScore: number;
+  pinned: boolean;
+  notes: string;
+  reviewStatus: string;
   keywordCount: number;
   createdAt: string;
 };
@@ -54,27 +72,15 @@ export type NicheDetail = {
   convRate: number;
   ltvCacRatio: number;
   keywordCount: number;
+  enrichedKeywordCount: number;
   createdAt: string;
   updatedAt: string;
   costs: { total: number; byProvider: Record<string, number> };
   opportunities: OpportunityRow[];
 };
 
-export type OpportunityDetail = {
-  id: string;
+export type OpportunityDetail = OpportunityRow & {
   nicheId: string;
-  productDescription: string;
-  buyerType: string;
-  intent: string;
-  painSeverity: number;
-  reasoning: string;
-  totalVolume: number;
-  avgCpc: number;
-  avgCompetition: number;
-  impliedCac: number;
-  annualPriceFloor: number;
-  monthlyPriceFloor: number;
-  demandScore: number;
   keywords: Array<{
     id: string;
     term: string;
@@ -91,7 +97,12 @@ export type OpportunityDetail = {
 
 export const api = {
   listNiches: () =>
-    request<{ globalCost: number; niches: NicheListItem[] }>("/niches"),
+    request<{
+      globalCost: number;
+      costEstimate: CostEstimate;
+      niches: NicheListItem[];
+    }>("/niches"),
+  costEstimate: () => request<CostEstimate>("/niches/cost-estimate"),
   createNiche: (seedTerm: string) =>
     request<NicheListItem>("/niches", {
       method: "POST",
@@ -100,6 +111,15 @@ export const api = {
   getNiche: (id: string) => request<NicheDetail>(`/niches/${id}`),
   getOpportunity: (nicheId: string, oppId: string) =>
     request<OpportunityDetail>(`/niches/${nicheId}/opportunities/${oppId}`),
+  updateOpportunity: (
+    nicheId: string,
+    oppId: string,
+    body: { pinned?: boolean; notes?: string; reviewStatus?: string },
+  ) =>
+    request<OpportunityRow>(`/niches/${nicheId}/opportunities/${oppId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   updateAssumptions: (
     id: string,
     body: { convRate?: number; ltvCacRatio?: number },
@@ -108,10 +128,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  reclassify: (id: string) =>
+    request(`/niches/${id}/reclassify`, { method: "POST" }),
   retry: (id: string) =>
     request(`/niches/${id}/retry`, { method: "POST" }),
   remove: (id: string) =>
     request(`/niches/${id}`, { method: "DELETE" }),
+  exportCsvUrl: (id: string) => `${BASE}/niches/${id}/export.csv`,
 };
 
 export function money(n: number, digits = 2) {

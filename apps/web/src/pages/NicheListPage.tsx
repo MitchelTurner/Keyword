@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, money, type NicheListItem } from "../api";
+import { api, money, type CostEstimate, type NicheListItem } from "../api";
 import StatusBadge from "../components/StatusBadge";
 
 const IN_FLIGHT = new Set([
@@ -15,6 +15,7 @@ export default function NicheListPage() {
   const [seedTerm, setSeedTerm] = useState("");
   const [niches, setNiches] = useState<NicheListItem[]>([]);
   const [globalCost, setGlobalCost] = useState(0);
+  const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -27,6 +28,7 @@ export default function NicheListPage() {
     const data = await api.listNiches();
     setNiches(data.niches);
     setGlobalCost(data.globalCost);
+    setEstimate(data.costEstimate);
   }
 
   useEffect(() => {
@@ -44,6 +46,12 @@ export default function NicheListPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!seedTerm.trim()) return;
+    if (estimate) {
+      const ok = confirm(
+        `Run pipeline for "${seedTerm.trim()}"?\n\nEstimated API spend: ${money(estimate.low, 2)} – ${money(estimate.high, 2)}\n(assumes ~${estimate.assumedKeywords} keywords; enrich may be cheaper with cache)`,
+      );
+      if (!ok) return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -96,6 +104,24 @@ export default function NicheListPage() {
           {submitting ? "Starting…" : "Run"}
         </button>
       </form>
+
+      {estimate && (
+        <div className="rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
+          <span className="text-zinc-300">
+            Est. run cost: {money(estimate.low, 2)} – {money(estimate.high, 2)}
+          </span>
+          <span className="mx-2 text-zinc-600">·</span>
+          expand {money(estimate.breakdown.expandLow, 2)}–
+          {money(estimate.breakdown.expandHigh, 2)}
+          <span className="mx-2 text-zinc-600">·</span>
+          enrich {money(estimate.breakdown.enrichLow, 2)}–
+          {money(estimate.breakdown.enrichHigh, 2)}
+          <span className="mx-2 text-zinc-600">·</span>
+          classify {money(estimate.breakdown.classifyLow, 2)}–
+          {money(estimate.breakdown.classifyHigh, 2)}
+          <div className="mt-1 text-zinc-600">{estimate.note}</div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between text-xs text-zinc-500">
         <span>{niches.length} niches</span>

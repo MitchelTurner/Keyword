@@ -1,0 +1,16 @@
+[phases.setup]
+nixPkgs = ["nodejs_22", "pnpm"]
+
+[phases.install]
+cmds = ["pnpm install --frozen-lockfile=false"]
+
+[phases.build]
+cmds = [
+  "pnpm --filter @prospector/shared build",
+  "pnpm --filter @prospector/api prisma:generate",
+  "pnpm --filter @prospector/api build",
+  "pnpm --filter @prospector/web build"
+]
+
+[start]
+cmd = "pnpm --filter @prospector/api prisma:deploy && pnpm --filter @prospector/api start:prod"

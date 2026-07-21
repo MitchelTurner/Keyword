@@ -1,0 +1,31 @@
+{
+  "version": "0.1.20240401",
+  "status_code": 20000,
+  "status_message": "Ok.",
+  "cost": 0.01,
+  "tasks": [
+    {
+      "id": "task-ideas-1",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "cost": 0.01,
+      "result_count": 1,
+      "result": [
+        {
+          "se_type": "google",
+          "seed_keywords": ["invoice software"],
+          "location_code": 2840,
+          "language_code": "en",
+          "items_count": 5,
+          "items": [
+            { "keyword": "invoice software", "keyword_info": { "search_volume": 12100 } },
+            { "keyword": "best invoicing software", "keyword_info": { "search_volume": 2900 } },
+            { "keyword": "free invoice app", "keyword_info": { "search_volume": 5400 } },
+            { "keyword": "invoice ocr software", "keyword_info": { "search_volume": 720 } },
+            { "keyword": "accounts payable automation", "keyword_info": { "search_volume": 1600 } }
+          ]
+        }
+      ]
+    }
+  ]
+}

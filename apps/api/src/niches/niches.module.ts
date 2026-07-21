@@ -1,0 +1,12 @@
+import { Module } from "@nestjs/common";
+import { PipelineModule } from "../pipeline/pipeline.module";
+import { NichesController } from "./niches.controller";
+import { NichesService } from "./niches.service";
+
+@Module({
+  imports: [PipelineModule],
+  controllers: [NichesController],
+  providers: [NichesService],
+  exports: [NichesService],
+})
+export class NichesModule {}

@@ -1,0 +1,62 @@
+{
+  "version": "0.1.20240401",
+  "status_code": 20000,
+  "status_message": "Ok.",
+  "cost": 0.075,
+  "tasks": [
+    {
+      "id": "task-sv-1",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "cost": 0.075,
+      "result_count": 1,
+      "result": [
+        {
+          "location_code": 2840,
+          "language_code": "en",
+          "items_count": 4,
+          "items": [
+            {
+              "keyword": "invoice software",
+              "search_volume": 12100,
+              "cpc": 18.4,
+              "competition": 0.72,
+              "competition_index": 72,
+              "monthly_searches": [
+                { "year": 2025, "month": 1, "search_volume": 11000 },
+                { "year": 2025, "month": 2, "search_volume": 12000 }
+              ]
+            },
+            {
+              "keyword": "best invoicing software",
+              "search_volume": 2900,
+              "cpc": 22.1,
+              "competition": 0.81,
+              "monthly_searches": [
+                { "year": 2025, "month": 1, "search_volume": 2800 },
+                { "year": 2025, "month": 2, "search_volume": 3000 }
+              ]
+            },
+            {
+              "keyword": "free invoice app",
+              "search_volume": 5400,
+              "cpc": 3.2,
+              "competition": null,
+              "competition_index": 45,
+              "monthly_searches": [
+                { "year": 2025, "month": 1, "search_volume": 5200 }
+              ]
+            },
+            {
+              "keyword": "obscure niche term xyz",
+              "search_volume": null,
+              "cpc": null,
+              "competition": null,
+              "monthly_searches": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

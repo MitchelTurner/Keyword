@@ -1,0 +1,47 @@
+{
+  "name": "@prospector/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:prod": "node dist/main.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:push": "prisma db push",
+    "prisma:deploy": "prisma migrate deploy",
+    "cli:niche": "tsx scripts/trigger-niche.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@nestjs/common": "^11.0.12",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.0.12",
+    "@nestjs/platform-express": "^11.0.12",
+    "@prisma/client": "^6.5.0",
+    "@prospector/shared": "workspace:*",
+    "bullmq": "^5.44.0",
+    "dotenv": "^16.4.7",
+    "ioredis": "^5.6.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.5",
+    "@nestjs/schematics": "^11.0.2",
+    "@nestjs/testing": "^11.0.12",
+    "@swc/core": "^1.15.46",
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.13.10",
+    "nock": "^14.0.1",
+    "prisma": "^6.5.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "unplugin-swc": "^1.5.9",
+    "vitest": "^3.0.9"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "prospector",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.33.3",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "dev:api": "pnpm --filter @prospector/api dev",
+    "dev:web": "pnpm --filter @prospector/web dev",
+    "build": "pnpm --filter @prospector/shared build && pnpm --filter @prospector/api build && pnpm --filter @prospector/web build",
+    "test": "pnpm --filter @prospector/shared test && pnpm --filter @prospector/api test",
+    "lint": "pnpm -r run lint --if-present",
+    "db:generate": "pnpm --filter @prospector/api prisma:generate",
+    "db:migrate": "pnpm --filter @prospector/api prisma:migrate",
+    "db:push": "pnpm --filter @prospector/api prisma:push",
+    "cli:niche": "pnpm --filter @prospector/api cli:niche"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild",
+      "msgpackr-extract",
+      "@swc/core"
+    ]
+  }
+}

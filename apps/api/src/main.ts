@@ -55,6 +55,21 @@ async function bootstrap() {
     existsSync(join(p, "index.html")),
   );
 
+  // Keep in sync with @Controller() paths — SPA fallback must not steal these.
+  const API_PREFIXES = ["/niches", "/health", "/portfolio"];
+
+  function isApiRequest(req: Request): boolean {
+    if (req.method !== "GET" && req.method !== "HEAD") return true;
+    const path = req.path || "/";
+    if (API_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
+      return true;
+    }
+    // fetch() JSON clients send Accept: application/json
+    const accept = req.headers.accept ?? "";
+    if (accept.includes("application/json")) return true;
+    return false;
+  }
+
   if (webDist) {
     console.log(`Serving web UI from ${webDist}`);
     app.useStaticAssets(webDist, {
@@ -69,12 +84,11 @@ async function bootstrap() {
     });
 
     app.use((req: Request, res: Response, next: NextFunction) => {
-      if (
-        req.method === "GET" &&
-        !req.path.startsWith("/niches") &&
-        !req.path.startsWith("/health") &&
-        !req.path.includes(".")
-      ) {
+      if (isApiRequest(req) || req.path.includes(".")) {
+        next();
+        return;
+      }
+      if (req.method === "GET" || req.method === "HEAD") {
         res.setHeader("Cache-Control", "no-cache");
         res.sendFile(join(webDist, "index.html"));
         return;

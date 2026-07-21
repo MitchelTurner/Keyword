@@ -3,16 +3,23 @@ const BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "/api" : ""
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: {
+      Accept: "application/json",
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
     },
     ...init,
   });
+  const contentType = res.headers.get("content-type") ?? "";
+  const body = await res.text();
   if (!res.ok) {
-    const body = await res.text();
     throw new Error(body || res.statusText);
   }
-  return res.json() as Promise<T>;
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      `Expected JSON from ${path}, got ${contentType || "unknown"} (check API/SPA routing)`,
+    );
+  }
+  return JSON.parse(body) as T;
 }
 
 export type NicheListItem = {

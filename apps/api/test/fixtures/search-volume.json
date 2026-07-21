@@ -1,60 +1,93 @@
 {
-  "version": "0.1.20240401",
+  "version": "0.1.20231117",
   "status_code": 20000,
   "status_message": "Ok.",
   "cost": 0.075,
+  "tasks_count": 1,
+  "tasks_error": 0,
   "tasks": [
     {
-      "id": "task-sv-1",
+      "id": "11301935-1535-0367-0000-b44e4432f0be",
       "status_code": 20000,
       "status_message": "Ok.",
       "cost": 0.075,
-      "result_count": 1,
+      "result_count": 4,
+      "path": [
+        "v3",
+        "keywords_data",
+        "google_ads",
+        "search_volume",
+        "live"
+      ],
+      "data": {
+        "api": "keywords_data",
+        "function": "search_volume",
+        "se": "google_ads",
+        "language_code": "en",
+        "location_code": 2840,
+        "keywords": [
+          "invoice software",
+          "best invoicing software",
+          "free invoice app",
+          "obscure niche term xyz"
+        ]
+      },
       "result": [
         {
+          "keyword": "invoice software",
+          "spell": null,
           "location_code": 2840,
           "language_code": "en",
-          "items_count": 4,
-          "items": [
-            {
-              "keyword": "invoice software",
-              "search_volume": 12100,
-              "cpc": 18.4,
-              "competition": 0.72,
-              "competition_index": 72,
-              "monthly_searches": [
-                { "year": 2025, "month": 1, "search_volume": 11000 },
-                { "year": 2025, "month": 2, "search_volume": 12000 }
-              ]
-            },
-            {
-              "keyword": "best invoicing software",
-              "search_volume": 2900,
-              "cpc": 22.1,
-              "competition": 0.81,
-              "monthly_searches": [
-                { "year": 2025, "month": 1, "search_volume": 2800 },
-                { "year": 2025, "month": 2, "search_volume": 3000 }
-              ]
-            },
-            {
-              "keyword": "free invoice app",
-              "search_volume": 5400,
-              "cpc": 3.2,
-              "competition": null,
-              "competition_index": 45,
-              "monthly_searches": [
-                { "year": 2025, "month": 1, "search_volume": 5200 }
-              ]
-            },
-            {
-              "keyword": "obscure niche term xyz",
-              "search_volume": null,
-              "cpc": null,
-              "competition": null,
-              "monthly_searches": null
-            }
+          "search_partners": false,
+          "competition": "HIGH",
+          "competition_index": 72,
+          "search_volume": 12100,
+          "cpc": 18.4,
+          "monthly_searches": [
+            { "year": 2025, "month": 1, "search_volume": 11000 },
+            { "year": 2025, "month": 2, "search_volume": 12000 }
           ]
+        },
+        {
+          "keyword": "best invoicing software",
+          "spell": null,
+          "location_code": 2840,
+          "language_code": "en",
+          "search_partners": false,
+          "competition": "MEDIUM",
+          "competition_index": 81,
+          "search_volume": 2900,
+          "cpc": 22.1,
+          "monthly_searches": [
+            { "year": 2025, "month": 1, "search_volume": 2800 },
+            { "year": 2025, "month": 2, "search_volume": 3000 }
+          ]
+        },
+        {
+          "keyword": "free invoice app",
+          "spell": null,
+          "location_code": 2840,
+          "language_code": "en",
+          "search_partners": false,
+          "competition": null,
+          "competition_index": 45,
+          "search_volume": 5400,
+          "cpc": 3.2,
+          "monthly_searches": [
+            { "year": 2025, "month": 1, "search_volume": 5200 }
+          ]
+        },
+        {
+          "keyword": "obscure niche term xyz",
+          "spell": null,
+          "location_code": 2840,
+          "language_code": "en",
+          "search_partners": false,
+          "competition": null,
+          "competition_index": null,
+          "search_volume": null,
+          "cpc": null,
+          "monthly_searches": null
         }
       ]
     }

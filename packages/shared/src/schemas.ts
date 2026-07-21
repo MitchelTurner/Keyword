@@ -99,9 +99,10 @@ export const UpdateOpportunitySchema = z
 export type UpdateOpportunityDto = z.infer<typeof UpdateOpportunitySchema>;
 
 export const MonthlyTrendPointSchema = z.object({
-  year: z.number().int(),
-  month: z.number().int().min(1).max(12),
-  search_volume: z.number().int().nullable().optional(),
+  year: z.number(),
+  month: z.number().min(1).max(12),
+  // Google Ads occasionally returns non-integers; don't drop the whole row.
+  search_volume: z.number().nullable().optional(),
 });
 export type MonthlyTrendPoint = z.infer<typeof MonthlyTrendPointSchema>;
 
@@ -143,15 +144,43 @@ export const KeywordIdeaItemSchema = z
   })
   .passthrough();
 
+/**
+ * Google Ads search_volume live returns competition as HIGH|MEDIUM|LOW (string).
+ * Older AdWords-shaped fixtures used a 0–1 float. Accept both.
+ */
 export const SearchVolumeItemSchema = z
   .object({
     keyword: z.string(),
     search_volume: z.number().nullable().optional(),
     cpc: z.number().nullable().optional(),
-    competition: z.number().nullable().optional(),
+    competition: z.union([z.number(), z.string()]).nullable().optional(),
     competition_index: z.number().nullable().optional(),
     monthly_searches: z.array(MonthlyTrendPointSchema).nullable().optional(),
   })
   .passthrough();
 
 export type SearchVolumeItem = z.infer<typeof SearchVolumeItemSchema>;
+
+const COMPETITION_LABELS: Record<string, number> = {
+  low: 0.33,
+  medium: 0.66,
+  high: 1,
+};
+
+/** Normalize Google Ads competition string/number + competition_index into 0–1. */
+export function normalizeCompetition(
+  competition: number | string | null | undefined,
+  competitionIndex?: number | null,
+): number | null {
+  if (typeof competition === "number" && !Number.isNaN(competition)) {
+    return competition > 1 ? competition / 100 : competition;
+  }
+  if (typeof competition === "string") {
+    const mapped = COMPETITION_LABELS[competition.trim().toLowerCase()];
+    if (mapped != null) return mapped;
+  }
+  if (competitionIndex != null && !Number.isNaN(competitionIndex)) {
+    return competitionIndex / 100;
+  }
+  return null;
+}

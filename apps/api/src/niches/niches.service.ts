@@ -362,7 +362,7 @@ export class NichesService {
         : await this.prisma.keyword.findMany({
             where: {
               nicheId: { in: nicheIds },
-              searchVolume: { not: null, gt: 0 },
+              searchVolume: { gt: 0 },
             },
             orderBy: { searchVolume: "desc" },
             take: 120,

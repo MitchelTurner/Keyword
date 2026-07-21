@@ -53,14 +53,16 @@ export default function NicheListPage() {
   );
 
   async function refresh() {
-    const [list, recommendations] = await Promise.all([
-      api.listNiches(),
-      api.recommendations(),
-    ]);
+    const list = await api.listNiches();
     setNiches(list.niches);
     setGlobalCost(list.globalCost);
     setEstimate(list.costEstimate);
-    setRecs(recommendations);
+    // Recommendations are optional — never block the niche table on this call.
+    try {
+      setRecs(await api.recommendations());
+    } catch {
+      /* keep prior recs */
+    }
   }
 
   useEffect(() => {

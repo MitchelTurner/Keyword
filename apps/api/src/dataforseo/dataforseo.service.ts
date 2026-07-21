@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import {
   KeywordIdeaItemSchema,
   SearchVolumeItemSchema,
+  normalizeCompetition,
   type SearchVolumeItem,
 } from "@prospector/shared";
 import { z } from "zod";
@@ -32,6 +33,23 @@ export type EnrichedKeywordRow = {
   monthlyTrend: SearchVolumeItem["monthly_searches"];
   raw: SearchVolumeItem;
 };
+
+/**
+ * Google Ads search_volume live returns a flat `result` array of keyword rows.
+ * Labs endpoints (and older fixtures) nest rows under `result[0].items`.
+ */
+export function extractSearchVolumeItems(result: unknown[] | null | undefined): unknown[] {
+  if (!result?.length) return [];
+  const first = result[0];
+  if (
+    first &&
+    typeof first === "object" &&
+    Array.isArray((first as { items?: unknown }).items)
+  ) {
+    return (first as { items: unknown[] }).items;
+  }
+  return result;
+}
 
 @Injectable()
 export class DataForSeoService {
@@ -188,31 +206,47 @@ export class DataForSeoService {
 
       const json = await this.request<{
         tasks: Array<{
-          result?: Array<{ items?: unknown[] } | null> | null;
+          result?: unknown[] | null;
         }>;
       }>("/keywords_data/google_ads/search_volume/live", payload, nicheId);
 
-      const items = json.tasks?.[0]?.result?.[0]?.items ?? [];
+      const items = extractSearchVolumeItems(json.tasks?.[0]?.result ?? []);
+      let parseFailures = 0;
       for (const raw of items) {
         const parsed = SearchVolumeItemSchema.safeParse(raw);
-        if (!parsed.success) continue;
-        const item = parsed.data;
-        let competition = item.competition ?? null;
-        if (
-          (competition == null || Number.isNaN(competition)) &&
-          item.competition_index != null
-        ) {
-          competition = item.competition_index / 100;
+        if (!parsed.success) {
+          parseFailures += 1;
+          continue;
         }
-
+        const item = parsed.data;
         rows.push({
           keyword: item.keyword,
           searchVolume: item.search_volume ?? null,
           cpc: item.cpc ?? null,
-          competition,
+          competition: normalizeCompetition(
+            item.competition,
+            item.competition_index,
+          ),
           monthlyTrend: item.monthly_searches ?? null,
           raw: item,
         });
+      }
+
+      if (items.length > 0 && rows.length === 0) {
+        throw new Error(
+          `DataForSEO search_volume returned ${items.length} rows but none parsed (check competition/schema)`,
+        );
+      }
+      if (parseFailures > 0) {
+        this.logger.warn(
+          JSON.stringify({
+            event: "search_volume_parse_failures",
+            nicheId,
+            parseFailures,
+            items: items.length,
+            parsed: items.length - parseFailures,
+          }),
+        );
       }
     }
 

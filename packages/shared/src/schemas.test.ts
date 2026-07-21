@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   ClaudeClassificationSchema,
   CreateNicheSchema,
+  SearchVolumeItemSchema,
   UpdateNicheAssumptionsSchema,
   UpdateOpportunitySchema,
+  normalizeCompetition,
 } from "./schemas";
 
 describe("CreateNicheSchema", () => {
@@ -38,6 +40,22 @@ describe("UpdateOpportunitySchema", () => {
         notes: "worth building",
       }),
     ).toMatchObject({ pinned: true, reviewStatus: "watching" });
+  });
+});
+
+describe("SearchVolumeItemSchema", () => {
+  it("accepts Google Ads string competition labels", () => {
+    const parsed = SearchVolumeItemSchema.parse({
+      keyword: "buy laptop",
+      search_volume: 2900,
+      cpc: 7.95,
+      competition: "HIGH",
+      competition_index: 100,
+      monthly_searches: [{ year: 2023, month: 10, search_volume: 2400 }],
+    });
+    expect(normalizeCompetition(parsed.competition, parsed.competition_index)).toBe(
+      1,
+    );
   });
 });
 

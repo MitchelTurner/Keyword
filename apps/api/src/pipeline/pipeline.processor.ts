@@ -289,6 +289,12 @@ export class PipelineProcessor {
         competition: k.competition ?? 0,
       }));
 
+    if (classifiable.length === 0) {
+      throw new Error(
+        `No enriched keywords with search volume > 0 for niche ${nicheId} (${keywords.length} rows had volume data). Check DataForSEO enrich parsing.`,
+      );
+    }
+
     const termToId = new Map(
       classifiable.map((k) => [k.term.toLowerCase(), k.id] as const),
     );

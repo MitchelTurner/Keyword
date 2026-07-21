@@ -30,6 +30,25 @@ describe("UpdateNicheAssumptionsSchema", () => {
       convRate: 0.02,
     });
   });
+
+  it("accepts rubric config without preferred buyers", () => {
+    const parsed = UpdateNicheAssumptionsSchema.parse({
+      rubricConfig: {
+        minMonthlyFloor: 49,
+        minVolume: 500,
+        minPain: 3,
+        maxCompetition: 0.8,
+        rejectDeclining: true,
+      },
+    });
+    expect(parsed.rubricConfig).toMatchObject({
+      minVolume: 500,
+      rejectDeclining: true,
+    });
+    expect(
+      (parsed.rubricConfig as { preferredBuyers?: unknown }).preferredBuyers,
+    ).toBeUndefined();
+  });
 });
 
 describe("UpdateOpportunitySchema", () => {

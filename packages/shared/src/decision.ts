@@ -17,7 +17,6 @@ export type RubricConfig = {
   minVolume: number;
   minPain: number;
   maxCompetition: number;
-  preferredBuyers: BuyerType[];
   rejectDeclining: boolean;
 };
 
@@ -61,8 +60,7 @@ export const DEFAULT_RUBRIC: RubricConfig = {
   minMonthlyFloor: 49,
   minVolume: 500,
   minPain: 3,
-  maxCompetition: 0.85,
-  preferredBuyers: ["government", "enterprise", "SMB"],
+  maxCompetition: 0.8,
   rejectDeclining: true,
 };
 
@@ -120,7 +118,6 @@ export function explainDemandScore(input: {
 
 export function evaluateRubric(
   input: {
-    buyerType: string;
     monthlyPriceFloor: number;
     totalVolume: number;
     painSeverity: number;
@@ -131,12 +128,6 @@ export function evaluateRubric(
 ): RubricResult {
   const checks: RubricCheck[] = [
     {
-      id: "buyer",
-      label: "Preferred buyer type",
-      pass: config.preferredBuyers.includes(input.buyerType as BuyerType),
-      detail: `${input.buyerType} · prefer ${config.preferredBuyers.join(", ")}`,
-    },
-    {
       id: "floor",
       label: "Monthly price floor",
       pass: input.monthlyPriceFloor >= config.minMonthlyFloor,
@@ -144,9 +135,9 @@ export function evaluateRubric(
     },
     {
       id: "volume",
-      label: "Search volume",
+      label: "Theme search volume",
       pass: input.totalVolume >= config.minVolume,
-      detail: `${input.totalVolume} vs min ${config.minVolume}`,
+      detail: `${Math.round(input.totalVolume).toLocaleString()} vs min ${config.minVolume.toLocaleString()}`,
     },
     {
       id: "pain",
@@ -158,7 +149,7 @@ export function evaluateRubric(
       id: "competition",
       label: "Competition ceiling",
       pass: input.avgCompetition <= config.maxCompetition,
-      detail: `${input.avgCompetition.toFixed(2)} vs max ${config.maxCompetition}`,
+      detail: `${input.avgCompetition.toFixed(2)} vs max ${config.maxCompetition.toFixed(2)}`,
     },
     {
       id: "trend",
@@ -207,14 +198,17 @@ export function buildBrief(input: BuildBriefInput): BuildBrief {
   }
 
   let nextStep: string;
-  if (input.buyerType === "consumer" || input.buyerType === "prosumer") {
-    nextStep = "Validate whether you want this buyer segment; otherwise pass.";
-  } else if (input.trendDirection === "declining") {
+  if (input.trendDirection === "declining") {
     nextStep = "Check seasonality / SERP before investing — demand is cooling.";
   } else if (input.monthlyPriceFloor < 49) {
-    nextStep = "Pressure-test willingness to pay; floor may be too low for sales-led.";
+    nextStep =
+      "Pressure-test willingness to pay; floor may be too low to pursue.";
+  } else if (input.avgCompetition >= 0.8) {
+    nextStep =
+      "SERP is crowded — look for a sharper wedge or long-tail angle.";
   } else {
-    nextStep = "Pin it, skim top keywords, then spot-check SERPs for real demand.";
+    nextStep =
+      "Pin it, skim top keywords, then spot-check SERPs for real demand.";
   }
 
   return { summary, whyRanks, nextStep };

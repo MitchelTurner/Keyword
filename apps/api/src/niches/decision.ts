@@ -22,9 +22,27 @@ export function parseRubricConfig(
   raw: Prisma.JsonValue | null | undefined,
 ): RubricConfig {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return DEFAULT_RUBRIC;
+    return { ...DEFAULT_RUBRIC };
   }
-  return { ...DEFAULT_RUBRIC, ...(raw as Partial<RubricConfig>) };
+  const o = raw as Record<string, unknown>;
+  return {
+    minMonthlyFloor:
+      typeof o.minMonthlyFloor === "number"
+        ? o.minMonthlyFloor
+        : DEFAULT_RUBRIC.minMonthlyFloor,
+    minVolume:
+      typeof o.minVolume === "number" ? o.minVolume : DEFAULT_RUBRIC.minVolume,
+    minPain:
+      typeof o.minPain === "number" ? o.minPain : DEFAULT_RUBRIC.minPain,
+    maxCompetition:
+      typeof o.maxCompetition === "number"
+        ? o.maxCompetition
+        : DEFAULT_RUBRIC.maxCompetition,
+    rejectDeclining:
+      typeof o.rejectDeclining === "boolean"
+        ? o.rejectDeclining
+        : DEFAULT_RUBRIC.rejectDeclining,
+  };
 }
 
 export function attachDecisionSupport<
@@ -73,7 +91,6 @@ export function attachDecisionSupport<
     });
     const rubricResult = evaluateRubric(
       {
-        buyerType: o.buyerType,
         monthlyPriceFloor: o.monthlyPriceFloor,
         totalVolume: o.totalVolume,
         painSeverity: o.painSeverity,

@@ -112,7 +112,6 @@ export type RubricConfig = {
   minVolume: number;
   minPain: number;
   maxCompetition: number;
-  preferredBuyers: string[];
   rejectDeclining: boolean;
 };
 

@@ -24,9 +24,8 @@ describe("explainDemandScore", () => {
 });
 
 describe("evaluateRubric", () => {
-  it("passes a strong enterprise opportunity", () => {
+  it("passes a strong opportunity on economics and demand", () => {
     const r = evaluateRubric({
-      buyerType: "enterprise",
       monthlyPriceFloor: 120,
       totalVolume: 2000,
       painSeverity: 4,
@@ -35,12 +34,12 @@ describe("evaluateRubric", () => {
     });
     expect(r.pass).toBe(true);
     expect(r.score).toBe(1);
+    expect(r.checks.some((c) => c.id === "buyer")).toBe(false);
   });
 
-  it("fails declining consumer with low floor", () => {
+  it("fails weak declining opportunity", () => {
     const r = evaluateRubric(
       {
-        buyerType: "consumer",
         monthlyPriceFloor: 9,
         totalVolume: 100,
         painSeverity: 2,

@@ -46,7 +46,6 @@ export const RubricConfigSchema = z.object({
   minVolume: z.number().int().min(0).max(10_000_000),
   minPain: z.number().int().min(1).max(5),
   maxCompetition: z.number().min(0).max(1),
-  preferredBuyers: z.array(BuyerTypeSchema).min(1),
   rejectDeclining: z.boolean(),
 });
 export type RubricConfigDto = z.infer<typeof RubricConfigSchema>;

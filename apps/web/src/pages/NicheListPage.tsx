@@ -12,7 +12,6 @@ import PageHeader from "../components/PageHeader";
 import EmptyState from "../components/EmptyState";
 import Panel from "../components/Panel";
 import RecommendationsPanel from "../components/RecommendationsPanel";
-import SeedSearchPanel from "../components/SeedSearchPanel";
 import { relativeTime } from "../lib/format";
 
 const IN_FLIGHT = new Set([
@@ -166,8 +165,6 @@ export default function NicheListPage() {
           </div>
         )}
       </Panel>
-
-      <SeedSearchPanel selectedSeed={seedTerm} onPick={setSeedTerm} />
 
       {recs && (
         <RecommendationsPanel

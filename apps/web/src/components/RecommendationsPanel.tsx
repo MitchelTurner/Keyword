@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { RecommendedKeyword, RecommendedNiche } from "../api";
 import { num } from "../api";
 import Panel from "./Panel";
 
-const NICHE_PAGE = 4;
-const KEYWORD_PAGE = 10;
+const PAGE_SIZE = 6;
 
 function useCyclePage(itemCount: number, pageSize: number, resetKey: string) {
   const pageCount = Math.max(1, Math.ceil(itemCount / pageSize) || 1);
@@ -28,61 +27,6 @@ function useCyclePage(itemCount: number, pageSize: number, resetKey: string) {
   };
 }
 
-function SectionHeader({
-  label,
-  page,
-  pageCount,
-  total,
-  onPrev,
-  onNext,
-  extra,
-}: {
-  label: string;
-  page: number;
-  pageCount: number;
-  total: number;
-  onPrev: () => void;
-  onNext: () => void;
-  extra?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-        {label}
-        {total > 0 && (
-          <span className="ml-2 normal-case tracking-normal text-zinc-600">
-            {pageCount > 1 ? `${page + 1}/${pageCount} · ` : ""}
-            {total}
-          </span>
-        )}
-      </p>
-      <div className="flex items-center gap-1">
-        {pageCount > 1 && (
-          <>
-            <button
-              type="button"
-              onClick={onPrev}
-              className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100"
-              aria-label={`Previous ${label.toLowerCase()}`}
-            >
-              ←
-            </button>
-            <button
-              type="button"
-              onClick={onNext}
-              className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100"
-              aria-label={`Next ${label.toLowerCase()}`}
-            >
-              →
-            </button>
-          </>
-        )}
-        {extra}
-      </div>
-    </div>
-  );
-}
-
 export default function RecommendationsPanel({
   niches,
   keywords,
@@ -94,83 +38,147 @@ export default function RecommendationsPanel({
   selectedSeed: string;
   onPick: (term: string) => void;
 }) {
-  const openNiches = useMemo(
+  const apiSeeds = useMemo(() => {
+    const selected = selectedSeed.trim().toLowerCase();
+    return keywords.filter(
+      (k) =>
+        (k.source === "api" || k.source === "follow_on") &&
+        k.term.trim().toLowerCase() !== selected,
+    );
+  }, [keywords, selectedSeed]);
+
+  const starterNiches = useMemo(
     () => niches.filter((n) => !n.alreadyRun),
     [niches],
   );
-  const openKeywords = useMemo(() => {
-    const selected = selectedSeed.trim().toLowerCase();
-    return keywords.filter((k) => k.term.trim().toLowerCase() !== selected);
-  }, [keywords, selectedSeed]);
 
-  const nicheCycle = useCyclePage(
-    openNiches.length,
-    NICHE_PAGE,
-    openNiches.map((n) => n.id).join("|"),
+  const usingApi = apiSeeds.length > 0;
+  const items = usingApi ? apiSeeds : starterNiches;
+  const cycle = useCyclePage(
+    items.length,
+    PAGE_SIZE,
+    usingApi
+      ? apiSeeds.map((k) => k.term).join("|")
+      : starterNiches.map((n) => n.id).join("|"),
   );
-  const keywordCycle = useCyclePage(
-    openKeywords.length,
-    KEYWORD_PAGE,
-    // Don't reset page when only the selected seed changes — keep browsing position.
-    openKeywords.length.toString(),
-  );
+  const pageItems = items.slice(cycle.start, cycle.start + PAGE_SIZE);
 
-  const nichePage = openNiches.slice(
-    nicheCycle.start,
-    nicheCycle.start + NICHE_PAGE,
-  );
-  const keywordPage = openKeywords.slice(
-    keywordCycle.start,
-    keywordCycle.start + KEYWORD_PAGE,
-  );
-
-  const followOnCount = openKeywords.filter((k) => k.source === "follow_on")
-    .length;
-
-  if (openNiches.length === 0 && openKeywords.length === 0) {
-    return null;
+  if (items.length === 0) {
+    return (
+      <Panel
+        title="Recommended seeds"
+        hint="Live high volume · low competition niches across diverse topics"
+      >
+        <p className="text-xs text-zinc-500">
+          No live suggestions yet. Check DataForSEO credentials, then refresh.
+        </p>
+      </Panel>
+    );
   }
 
-  function pickNextKeyword() {
-    const pool = keywords;
-    if (pool.length === 0) return;
-    const selected = selectedSeed.trim().toLowerCase();
-    const idx = pool.findIndex(
-      (k) => k.term.trim().toLowerCase() === selected,
-    );
-    const nextIdx = (idx + 1) % pool.length;
-    const next = pool[nextIdx]!;
-    onPick(next.term);
-    // Align the visible page to the picked term among currently open chips.
-    const openIdx = openKeywords.findIndex(
-      (k) => k.term.trim().toLowerCase() === next.term.trim().toLowerCase(),
-    );
-    if (openIdx >= 0) {
-      keywordCycle.setPage(Math.floor(openIdx / KEYWORD_PAGE));
+  function pickNext() {
+    if (usingApi) {
+      if (apiSeeds.length === 0) return;
+      const selected = selectedSeed.trim().toLowerCase();
+      const idx = apiSeeds.findIndex(
+        (k) => k.term.trim().toLowerCase() === selected,
+      );
+      const next = apiSeeds[(idx + 1) % apiSeeds.length]!;
+      onPick(next.term);
+      const openIdx = apiSeeds.findIndex(
+        (k) => k.term.trim().toLowerCase() === next.term.trim().toLowerCase(),
+      );
+      if (openIdx >= 0) cycle.setPage(Math.floor(openIdx / PAGE_SIZE));
+      return;
     }
+    if (starterNiches.length === 0) return;
+    const next = starterNiches[(cycle.start + 1) % starterNiches.length]!;
+    onPick(next.seed);
   }
 
   return (
     <Panel
       title="Recommended seeds"
       hint={
-        followOnCount > 0
-          ? `${followOnCount} ranked by high volume + low competition · use ← → to cycle`
-          : "General search seeds — not limited to software"
+        usingApi
+          ? `${apiSeeds.length} niches from live API · high volume, low competition, wide topic mix`
+          : "Starter ideas (live API unavailable)"
       }
     >
-      {openNiches.length > 0 && (
-        <div className="space-y-2">
-          <SectionHeader
-            label="Niches"
-            page={nicheCycle.page}
-            pageCount={nicheCycle.pageCount}
-            total={openNiches.length}
-            onPrev={nicheCycle.prev}
-            onNext={nicheCycle.next}
-          />
-          <ul className="divide-y divide-zinc-800/80 border-y border-zinc-800/80">
-            {nichePage.map((n) => (
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+          {usingApi ? "Suggested niches" : "Starter niches"}
+          <span className="ml-2 normal-case tracking-normal text-zinc-600">
+            {cycle.pageCount > 1 ? `${cycle.page + 1}/${cycle.pageCount} · ` : ""}
+            {items.length}
+          </span>
+        </p>
+        <div className="flex items-center gap-1">
+          {cycle.pageCount > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={cycle.prev}
+                className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100"
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                onClick={cycle.next}
+                className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100"
+              >
+                →
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={pickNext}
+            className="rounded border border-emerald-800/70 bg-emerald-950/30 px-2 py-0.5 text-xs text-emerald-300 transition hover:bg-emerald-950/55"
+          >
+            Next seed →
+          </button>
+        </div>
+      </div>
+
+      <ul className="divide-y divide-zinc-800/80 border-y border-zinc-800/80">
+        {usingApi
+          ? (pageItems as RecommendedKeyword[]).map((k) => (
+              <li key={k.term}>
+                <button
+                  type="button"
+                  onClick={() => onPick(k.term)}
+                  title={k.reason ?? k.term}
+                  className={`flex w-full flex-col gap-0.5 px-1 py-2.5 text-left transition hover:bg-zinc-900/70 ${
+                    selectedSeed === k.term ? "bg-emerald-950/25" : ""
+                  }`}
+                >
+                  <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span className="text-sm font-medium text-emerald-300">
+                      {k.term}
+                    </span>
+                    {k.category && (
+                      <span className="text-[11px] uppercase tracking-wide text-zinc-600">
+                        {k.category}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-xs text-zinc-500">
+                    <span className="tabular-nums text-zinc-400">
+                      {k.volume != null ? num(k.volume) : "—"}/mo
+                    </span>
+                    <span className="mx-1.5 text-zinc-700">·</span>
+                    <span className="tabular-nums text-zinc-400">
+                      {k.competition != null
+                        ? `${k.competition.toFixed(2)} comp`
+                        : "comp n/a"}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))
+          : (pageItems as RecommendedNiche[]).map((n) => (
               <li key={n.id}>
                 <button
                   type="button"
@@ -193,62 +201,7 @@ export default function RecommendationsPanel({
                 </button>
               </li>
             ))}
-          </ul>
-        </div>
-      )}
-
-      {openKeywords.length > 0 && (
-        <div className={openNiches.length > 0 ? "mt-4 space-y-2" : "space-y-2"}>
-          <SectionHeader
-            label="Keywords"
-            page={keywordCycle.page}
-            pageCount={keywordCycle.pageCount}
-            total={openKeywords.length}
-            onPrev={keywordCycle.prev}
-            onNext={keywordCycle.next}
-            extra={
-              <button
-                type="button"
-                onClick={pickNextKeyword}
-                className="rounded border border-emerald-800/70 bg-emerald-950/30 px-2 py-0.5 text-xs text-emerald-300 transition hover:bg-emerald-950/55"
-                title="Fill the seed input with the next recommended keyword"
-              >
-                Next keyword →
-              </button>
-            }
-          />
-          <div className="flex flex-wrap gap-1.5">
-            {keywordPage.map((k) => (
-              <button
-                key={`${k.source}-${k.term}`}
-                type="button"
-                title={k.reason ?? k.term}
-                onClick={() => onPick(k.term)}
-                className={`rounded border px-2 py-1 text-xs transition ${
-                  selectedSeed === k.term
-                    ? "border-emerald-700 bg-emerald-950/40 text-emerald-200"
-                    : k.source === "follow_on"
-                      ? "border-zinc-700 bg-zinc-950/60 text-zinc-200 hover:border-emerald-800 hover:text-emerald-300"
-                      : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
-                }`}
-              >
-                {k.term}
-                {k.source === "follow_on" && k.volume != null && (
-                  <span className="ml-1.5 tabular-nums text-zinc-600">
-                    {num(k.volume)}
-                    {k.competition != null && (
-                      <span className="text-zinc-700">
-                        {" "}
-                        · {k.competition.toFixed(2)}
-                      </span>
-                    )}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      </ul>
     </Panel>
   );
 }

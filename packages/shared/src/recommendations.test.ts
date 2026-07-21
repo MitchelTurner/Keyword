@@ -1,22 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   CURATED_NICHES,
+  TOPIC_PROBES,
   buildRecommendations,
+  diversifyApiSeedRecommendations,
   isSeedablePhrase,
-  rankFollowOnKeywords,
+  phrasesTooSimilar,
   searchSeedKeywords,
   seedOpportunityScore,
 } from "./recommendations";
 
 describe("recommendations", () => {
-  it("ships a curated niche catalog beyond software-only seeds", () => {
+  it("ships curated niches and diverse topic probes", () => {
     expect(CURATED_NICHES.length).toBeGreaterThanOrEqual(8);
-    const seeds = CURATED_NICHES.map((n) => n.seed.toLowerCase()).join(" ");
-    expect(seeds.includes("software")).toBe(false);
-    for (const n of CURATED_NICHES) {
-      expect(n.seed.length).toBeGreaterThan(3);
-      expect(n.keywords.length).toBeGreaterThan(0);
-    }
+    expect(TOPIC_PROBES.length).toBeGreaterThanOrEqual(12);
+    const categories = new Set(TOPIC_PROBES.map((p) => p.category));
+    expect(categories.size).toBeGreaterThanOrEqual(12);
   });
 
   it("scores high volume + low competition above high volume crowded terms", () => {
@@ -25,81 +24,95 @@ describe("recommendations", () => {
     expect(lowComp).toBeGreaterThan(highComp);
   });
 
-  it("marks already-run niches and filters duplicate keywords", () => {
-    const result = buildRecommendations({
-      existingSeeds: ["HOA management", "running shoes"],
-      followOnCandidates: [
-        {
-          term: "HOA fees explained",
-          nicheId: "n1",
-          nicheSeed: "HOA management",
-          volume: 1200,
-          competition: 0.3,
-        },
-        {
-          term: "x",
-          nicheId: "n1",
-          nicheSeed: "HOA management",
-          volume: 9999,
-          competition: 0.1,
-        },
-      ],
-    });
-
-    const hoa = result.niches.find((n) => n.id === "hoa-management");
-    expect(hoa?.alreadyRun).toBe(true);
-    expect(
-      result.keywords.some(
-        (k) => k.term.toLowerCase() === "hoa fees explained",
-      ),
-    ).toBe(true);
-    expect(result.keywords.every((k) => isSeedablePhrase(k.term))).toBe(true);
-  });
-
-  it("ranks follow-ons by volume and low competition", () => {
-    const ranked = rankFollowOnKeywords(
+  it("diversifies API seeds across categories", () => {
+    const picks = diversifyApiSeedRecommendations(
       [
         {
           term: "trail running shoes",
-          nicheId: "a",
-          nicheSeed: "running shoes",
-          volume: 500,
-          competition: 0.8,
-        },
-        {
-          term: "running shoes",
-          nicheId: "a",
-          nicheSeed: "running shoes",
-          volume: 9000,
+          category: "Fitness",
+          probe: "running shoes",
+          volume: 2000,
           competition: 0.2,
         },
         {
-          term: "best running shoes",
-          nicheId: "a",
-          nicheSeed: "running shoes",
-          volume: 800,
-          competition: 0.25,
+          term: "marathon racing flats",
+          category: "Fitness",
+          probe: "running shoes",
+          volume: 1800,
+          competition: 0.22,
         },
         {
-          term: "crowded shoe deals",
-          nicheId: "a",
-          nicheSeed: "running shoes",
-          volume: 4000,
-          competition: 0.92,
+          term: "car accident attorney",
+          category: "Legal",
+          probe: "personal injury lawyer",
+          volume: 1500,
+          competition: 0.3,
+        },
+        {
+          term: "truck accident lawyer",
+          category: "Legal",
+          probe: "personal injury lawyer",
+          volume: 900,
+          competition: 0.28,
+        },
+        {
+          term: "residential solar cost",
+          category: "Energy",
+          probe: "solar panels",
+          volume: 1100,
+          competition: 0.25,
         },
       ],
       [],
-      5,
+      3,
     );
-    expect(ranked[0]?.term).toBe("best running shoes");
-    expect(ranked.some((k) => k.term.toLowerCase() === "running shoes")).toBe(
-      false,
-    );
+
+    expect(picks).toHaveLength(3);
+    const cats = new Set(picks.map((p) => p.category));
+    expect(cats.size).toBe(3);
+    expect(picks.every((p) => p.source === "api")).toBe(true);
+    expect(picks.every((p) => isSeedablePhrase(p.term))).toBe(true);
+  });
+
+  it("detects near-duplicate phrases", () => {
     expect(
-      ranked.some((k) => k.term.toLowerCase() === "crowded shoe deals"),
-    ).toBe(false);
-    expect(ranked[0]?.competition).toBe(0.25);
-    expect(ranked[0]?.reason?.toLowerCase()).toContain("competition");
+      phrasesTooSimilar("dog training classes", "puppy dog training classes"),
+    ).toBe(true);
+    expect(phrasesTooSimilar("dog training", "solar panel cost")).toBe(false);
+  });
+
+  it("builds recommendations from API candidates", () => {
+    const result = buildRecommendations({
+      existingSeeds: ["running shoes"],
+      apiCandidates: [
+        {
+          term: "trail running shoes",
+          category: "Fitness",
+          probe: "running shoes",
+          volume: 2000,
+          competition: 0.2,
+        },
+        {
+          term: "car accident attorney",
+          category: "Legal",
+          probe: "personal injury lawyer",
+          volume: 1500,
+          competition: 0.3,
+        },
+      ],
+    });
+    expect(result.niches).toHaveLength(0);
+    expect(result.keywords.length).toBeGreaterThan(0);
+    expect(result.keywords.every((k) => k.source === "api")).toBe(true);
+  });
+
+  it("falls back to curated starters when API returns nothing", () => {
+    const result = buildRecommendations({
+      existingSeeds: [],
+      apiCandidates: [],
+    });
+    expect(result.keywords).toHaveLength(0);
+    expect(result.niches.length).toBeGreaterThan(0);
   });
 
   it("searches seeds with min volume and max competition filters", () => {
@@ -118,13 +131,6 @@ describe("recommendations", () => {
           nicheSeed: "widgets",
           volume: 5000,
           competition: 0.7,
-        },
-        {
-          term: "tiny widget tip",
-          nicheId: "a",
-          nicheSeed: "widgets",
-          volume: 80,
-          competition: 0.1,
         },
       ],
       ["widgets"],

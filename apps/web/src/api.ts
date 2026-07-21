@@ -185,9 +185,10 @@ export type RecommendedNiche = {
 
 export type RecommendedKeyword = {
   term: string;
-  source: "curated" | "follow_on";
+  source: "api" | "curated" | "follow_on";
   nicheId?: string;
   nicheSeed?: string;
+  category?: string;
   reason?: string;
   volume?: number | null;
   competition?: number | null;

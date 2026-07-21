@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import {
@@ -20,6 +21,7 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { PipelineService } from "../pipeline/pipeline.service";
 import { CostService } from "../cost/cost.service";
+import { DataForSeoService } from "../dataforseo/dataforseo.service";
 import {
   DEFAULT_RUBRIC,
   attachDecisionSupport,
@@ -47,10 +49,13 @@ const IN_FLIGHT_STATUSES = new Set([
 
 @Injectable()
 export class NichesService {
+  private readonly logger = new Logger(NichesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pipeline: PipelineService,
     private readonly cost: CostService,
+    private readonly dataForSeo: DataForSeoService,
   ) {}
 
   estimateCost() {
@@ -376,41 +381,23 @@ export class NichesService {
 
   async recommendations() {
     const niches = await this.prisma.niche.findMany({
-      select: { id: true, seedTerm: true },
+      select: { seedTerm: true },
     });
     const existingSeeds = niches.map((n) => n.seedTerm);
-    const nicheIds = niches.map((n) => n.id);
 
-    // Pull a broad high-volume pool, then rank by volume × low competition.
-    const topKeywords =
-      nicheIds.length === 0
-        ? []
-        : await this.prisma.keyword.findMany({
-            where: {
-              nicheId: { in: nicheIds },
-              searchVolume: { gte: MIN_KEYWORD_VOLUME },
-              OR: [{ competition: null }, { competition: { lte: 0.85 } }],
-            },
-            orderBy: [{ searchVolume: "desc" }, { competition: "asc" }],
-            take: 400,
-            select: {
-              term: true,
-              searchVolume: true,
-              competition: true,
-              nicheId: true,
-              niche: { select: { seedTerm: true } },
-            },
-          });
+    // Live DataForSEO discovery across diverse topic probes (cached).
+    const apiCandidates = await this.dataForSeo
+      .discoverRecommendedSeeds()
+      .catch((err) => {
+        this.logger.warn(
+          `Live seed discovery failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return [];
+      });
 
     return buildRecommendations({
       existingSeeds,
-      followOnCandidates: topKeywords.map((k) => ({
-        term: k.term,
-        nicheId: k.nicheId,
-        nicheSeed: k.niche.seedTerm,
-        volume: k.searchVolume,
-        competition: k.competition,
-      })),
+      apiCandidates,
     });
   }
 

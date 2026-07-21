@@ -147,6 +147,23 @@ export const KeywordIdeaItemSchema = z
   })
   .passthrough();
 
+/** Labs keyword_ideas / keyword_suggestions row with metrics. */
+export const LabsKeywordMetricsSchema = z
+  .object({
+    keyword: z.string(),
+    keyword_info: z
+      .object({
+        search_volume: z.number().nullable().optional(),
+        competition: z.number().nullable().optional(),
+        competition_level: z.string().nullable().optional(),
+        cpc: z.number().nullable().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+export type LabsKeywordMetrics = z.infer<typeof LabsKeywordMetricsSchema>;
+
 /**
  * Google Ads search_volume live returns competition as HIGH|MEDIUM|LOW (string).
  * Older AdWords-shaped fixtures used a 0–1 float. Accept both.

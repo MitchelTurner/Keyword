@@ -2,9 +2,14 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   KeywordIdeaItemSchema,
+  LabsKeywordMetricsSchema,
   MIN_KEYWORD_VOLUME,
+  RECOMMENDED_SEED_MAX_COMPETITION,
+  RECOMMENDED_SEED_MIN_VOLUME,
   SearchVolumeItemSchema,
+  TOPIC_PROBES,
   normalizeCompetition,
+  type ApiSeedCandidate,
   type SearchVolumeItem,
 } from "@prospector/shared";
 import { z } from "zod";
@@ -54,10 +59,16 @@ export function extractSearchVolumeItems(result: unknown[] | null | undefined): 
   return result;
 }
 
+type SeedDiscoveryCache = {
+  expiresAt: number;
+  candidates: ApiSeedCandidate[];
+};
+
 @Injectable()
 export class DataForSeoService {
   private readonly logger = new Logger(DataForSeoService.name);
   private readonly baseUrl = "https://api.dataforseo.com/v3";
+  private seedDiscoveryCache: SeedDiscoveryCache | null = null;
 
   constructor(
     private readonly config: ConfigService,
@@ -266,6 +277,131 @@ export class DataForSeoService {
     }>("/dataforseo_labs/google/keyword_ideas/live", payload, nicheId);
 
     return this.extractLabKeywords(json.tasks?.[0]?.result?.[0]?.items ?? []);
+  }
+
+  /**
+   * Live discovery of high-volume / low-competition seed ideas across
+   * widely different topic probes. Cached in-memory to avoid repeat spend.
+   */
+  async discoverRecommendedSeeds(opts?: {
+    minVolume?: number;
+    maxCompetition?: number;
+    forceRefresh?: boolean;
+  }): Promise<ApiSeedCandidate[]> {
+    const minVolume = opts?.minVolume ?? RECOMMENDED_SEED_MIN_VOLUME;
+    const maxCompetition =
+      opts?.maxCompetition ?? RECOMMENDED_SEED_MAX_COMPETITION;
+    const ttlMs = 6 * 60 * 60 * 1000;
+
+    if (
+      !opts?.forceRefresh &&
+      this.seedDiscoveryCache &&
+      this.seedDiscoveryCache.expiresAt > Date.now()
+    ) {
+      return this.seedDiscoveryCache.candidates;
+    }
+
+    const candidates: ApiSeedCandidate[] = [];
+    // Probe in small parallel batches — each probe is a distinct market.
+    const batchSize = 4;
+    for (let i = 0; i < TOPIC_PROBES.length; i += batchSize) {
+      const batch = TOPIC_PROBES.slice(i, i + batchSize);
+      const settled = await Promise.allSettled(
+        batch.map((probe) =>
+          this.fetchSeedIdeasForProbe(probe.seed, minVolume, maxCompetition),
+        ),
+      );
+
+      settled.forEach((result, idx) => {
+        const probe = batch[idx]!;
+        if (result.status === "rejected") {
+          this.logger.warn(
+            `Seed discovery probe failed (${probe.seed}): ${
+              result.reason instanceof Error
+                ? result.reason.message
+                : String(result.reason)
+            }`,
+          );
+          return;
+        }
+        for (const row of result.value) {
+          candidates.push({
+            term: row.term,
+            category: probe.category,
+            probe: probe.seed,
+            volume: row.volume,
+            competition: row.competition,
+          });
+        }
+      });
+    }
+
+    this.logger.log(
+      JSON.stringify({
+        event: "seed_discovery",
+        probes: TOPIC_PROBES.length,
+        candidates: candidates.length,
+        minVolume,
+        maxCompetition,
+      }),
+    );
+
+    this.seedDiscoveryCache = {
+      expiresAt: Date.now() + ttlMs,
+      candidates,
+    };
+    return candidates;
+  }
+
+  private async fetchSeedIdeasForProbe(
+    seed: string,
+    minVolume: number,
+    maxCompetition: number,
+  ): Promise<
+    Array<{ term: string; volume: number | null; competition: number | null }>
+  > {
+    const payload = [
+      {
+        keywords: [seed],
+        location_code: this.locationCode(),
+        language_code: this.languageCode(),
+        closely_variants: false,
+        filters: [
+          ["keyword_info.search_volume", ">=", minVolume],
+          "and",
+          ["keyword_info.competition", "<=", maxCompetition],
+        ],
+        order_by: ["keyword_info.search_volume,desc"],
+        limit: 30,
+      },
+    ];
+
+    const json = await this.request<{
+      tasks: Array<{
+        result?: Array<{ items?: unknown[] } | null> | null;
+      }>;
+    }>("/dataforseo_labs/google/keyword_ideas/live", payload);
+
+    const items = json.tasks?.[0]?.result?.[0]?.items ?? [];
+    const out: Array<{
+      term: string;
+      volume: number | null;
+      competition: number | null;
+    }> = [];
+
+    for (const raw of items) {
+      const parsed = LabsKeywordMetricsSchema.safeParse(raw);
+      if (!parsed.success) continue;
+      const term = parsed.data.keyword.trim();
+      if (!term) continue;
+      const info = parsed.data.keyword_info;
+      out.push({
+        term,
+        volume: info?.search_volume ?? null,
+        competition: info?.competition ?? null,
+      });
+    }
+    return out;
   }
 
   async enrichKeywords(

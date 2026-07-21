@@ -9,6 +9,7 @@ export type CuratedNiche = {
 
 /**
  * Curated starter seeds across general search demand — not software-only.
+ * Also used as fallback when the live keyword API is unavailable.
  */
 export const CURATED_NICHES: CuratedNiche[] = [
   {
@@ -157,11 +158,41 @@ export const CURATED_NICHES: CuratedNiche[] = [
   },
 ];
 
+/**
+ * Probe seeds spanning widely different markets for live API discovery.
+ * One probe per topic so recommendations cover the most ground.
+ */
+export const TOPIC_PROBES: Array<{
+  id: string;
+  category: string;
+  seed: string;
+}> = [
+  { id: "fitness", category: "Fitness", seed: "running shoes" },
+  { id: "legal", category: "Legal", seed: "personal injury lawyer" },
+  { id: "energy", category: "Energy", seed: "solar panels" },
+  { id: "pets", category: "Pets", seed: "dog training" },
+  { id: "finance", category: "Finance", seed: "credit repair" },
+  { id: "healthcare", category: "Healthcare", seed: "dental implants" },
+  { id: "events", category: "Events", seed: "wedding photography" },
+  { id: "property", category: "Property", seed: "HOA management" },
+  { id: "food", category: "Food", seed: "meal prep" },
+  { id: "travel", category: "Travel", seed: "rv rental" },
+  { id: "education", category: "Education", seed: "online tutoring" },
+  { id: "beauty", category: "Beauty", seed: "lash extensions" },
+  { id: "automotive", category: "Automotive", seed: "ceramic coating cars" },
+  { id: "parenting", category: "Parenting", seed: "sleep training baby" },
+  { id: "trades", category: "Trades", seed: "emergency plumber" },
+  { id: "agriculture", category: "Agriculture", seed: "hydroponic gardening" },
+  { id: "music", category: "Music", seed: "guitar lessons" },
+  { id: "outdoors", category: "Outdoors", seed: "kayak fishing" },
+];
+
 export type RecommendationKeyword = {
   term: string;
-  source: "curated" | "follow_on";
+  source: "api" | "curated" | "follow_on";
   nicheId?: string;
   nicheSeed?: string;
+  category?: string;
   reason?: string;
   volume?: number | null;
   competition?: number | null;
@@ -177,8 +208,20 @@ export type FollowOnCandidate = {
   competition?: number | null;
 };
 
+export type ApiSeedCandidate = {
+  term: string;
+  category: string;
+  probe: string;
+  volume: number | null;
+  competition: number | null;
+};
+
 /** Soft ceiling — terms above this are usually too crowded to recommend as seeds. */
 export const MAX_RECOMMENDED_COMPETITION = 0.75;
+
+/** Live recommended-seed thresholds. */
+export const RECOMMENDED_SEED_MIN_VOLUME = 500;
+export const RECOMMENDED_SEED_MAX_COMPETITION = 0.45;
 
 function normalizeTerm(term: string): string {
   return term.trim().toLowerCase().replace(/\s+/g, " ");
@@ -219,6 +262,26 @@ function competitionLabel(competition: number | null | undefined): string {
   return "higher competition";
 }
 
+function significantTokens(term: string): Set<string> {
+  return new Set(
+    term
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 3),
+  );
+}
+
+/** True when two phrases share most content words (near-duplicates). */
+export function phrasesTooSimilar(a: string, b: string): boolean {
+  const ta = significantTokens(a);
+  const tb = significantTokens(b);
+  if (ta.size === 0 || tb.size === 0) return false;
+  let overlap = 0;
+  for (const t of ta) if (tb.has(t)) overlap += 1;
+  const union = new Set([...ta, ...tb]).size;
+  return overlap / union >= 0.55;
+}
+
 export function filterUnusedCurated(
   existingSeeds: string[],
 ): CuratedNiche[] {
@@ -226,87 +289,86 @@ export function filterUnusedCurated(
   return CURATED_NICHES.filter((n) => !used.has(normalizeTerm(n.seed)));
 }
 
-export function curatedKeywordSuggestions(
-  existingSeeds: string[],
-  limit = 96,
-): RecommendationKeyword[] {
-  const used = new Set(existingSeeds.map(normalizeTerm));
-  const out: RecommendationKeyword[] = [];
-  for (const niche of CURATED_NICHES) {
-    for (const term of niche.keywords) {
-      if (used.has(normalizeTerm(term))) continue;
-      out.push({
-        term,
-        source: "curated",
-        nicheId: niche.id,
-        nicheSeed: niche.seed,
-        reason: `Related to ${niche.seed}`,
-      });
-      if (out.length >= limit) return out;
-    }
-  }
-  return out;
-}
-
 /**
- * Rank follow-on keyword seeds from enriched terms already in the DB.
- * Prefers high search volume and low competition.
+ * Diversify live API candidates across topic categories.
+ * Round-robins categories so recommendations span wide market differences.
  */
-export function rankFollowOnKeywords(
-  candidates: FollowOnCandidate[],
+export function diversifyApiSeedRecommendations(
+  candidates: ApiSeedCandidate[],
   existingSeeds: string[],
-  limit = 40,
+  limit = 24,
 ): RecommendationKeyword[] {
   const used = new Set(existingSeeds.map(normalizeTerm));
-  const best = new Map<
+  const byCategory = new Map<
     string,
-    FollowOnCandidate & { score: number }
+    Array<ApiSeedCandidate & { score: number }>
   >();
 
   for (const c of candidates) {
     if (!isSeedablePhrase(c.term)) continue;
     const key = normalizeTerm(c.term);
     if (used.has(key)) continue;
-    if (key === normalizeTerm(c.nicheSeed)) continue;
+    if (key === normalizeTerm(c.probe)) continue;
     const volume = c.volume ?? 0;
-    if (volume <= 0) continue;
-    // Skip clearly overcrowded terms when we know competition.
-    if (
-      c.competition != null &&
-      c.competition > MAX_RECOMMENDED_COMPETITION
-    ) {
+    if (volume < RECOMMENDED_SEED_MIN_VOLUME) continue;
+    if (c.competition == null || c.competition > RECOMMENDED_SEED_MAX_COMPETITION) {
       continue;
     }
-
     const score = seedOpportunityScore(c.volume, c.competition);
-    const prev = best.get(key);
-    if (!prev || score > prev.score) {
-      best.set(key, { ...c, score });
-    }
+    const list = byCategory.get(c.category) ?? [];
+    list.push({ ...c, score });
+    byCategory.set(c.category, list);
   }
 
-  return [...best.values()]
-    .sort((a, b) => {
+  for (const [category, list] of byCategory) {
+    list.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       return (b.volume ?? 0) - (a.volume ?? 0);
-    })
-    .slice(0, limit)
-    .map((c) => ({
-      term: c.term,
-      source: "follow_on" as const,
-      nicheId: c.nicheId,
-      nicheSeed: c.nicheSeed,
-      volume: c.volume,
-      competition: c.competition ?? null,
-      score: c.score,
-      reason: `${competitionLabel(c.competition)}, ${Math.round(c.volume ?? 0).toLocaleString()}/mo from “${c.nicheSeed}”`,
-    }));
+    });
+    byCategory.set(category, list);
+  }
+
+  const categories = [...byCategory.keys()].sort();
+  const indexes = new Map(categories.map((c) => [c, 0]));
+  const picked: RecommendationKeyword[] = [];
+  const pickedTerms: string[] = [];
+
+  while (picked.length < limit) {
+    let added = false;
+    for (const category of categories) {
+      if (picked.length >= limit) break;
+      const list = byCategory.get(category) ?? [];
+      let idx = indexes.get(category) ?? 0;
+      while (idx < list.length) {
+        const c = list[idx]!;
+        idx += 1;
+        indexes.set(category, idx);
+        const key = normalizeTerm(c.term);
+        if (pickedTerms.some((t) => phrasesTooSimilar(t, c.term))) continue;
+        if (picked.some((p) => normalizeTerm(p.term) === key)) continue;
+        picked.push({
+          term: c.term,
+          source: "api",
+          nicheSeed: c.probe,
+          category: c.category,
+          volume: c.volume,
+          competition: c.competition,
+          score: c.score,
+          reason: `${c.category} · ${competitionLabel(c.competition)} · ${Math.round(c.volume ?? 0).toLocaleString()}/mo`,
+        });
+        pickedTerms.push(c.term);
+        added = true;
+        break;
+      }
+    }
+    if (!added) break;
+  }
+
+  return picked;
 }
 
 /**
- * Search / filter enriched keyword rows for seed ideas.
- * Caller should already constrain the DB query; this dedupes, drops used seeds,
- * keeps seedable phrases, and ranks by high volume + low competition.
+ * Search / filter enriched keyword rows for seed ideas (legacy /seeds endpoint).
  */
 export function searchSeedKeywords(
   candidates: FollowOnCandidate[],
@@ -317,8 +379,8 @@ export function searchSeedKeywords(
     limit?: number;
   } = {},
 ): RecommendationKeyword[] {
-  const minVolume = opts.minVolume ?? 500;
-  const maxCompetition = opts.maxCompetition ?? 0.45;
+  const minVolume = opts.minVolume ?? RECOMMENDED_SEED_MIN_VOLUME;
+  const maxCompetition = opts.maxCompetition ?? RECOMMENDED_SEED_MAX_COMPETITION;
   const limit = opts.limit ?? 40;
   const used = new Set(existingSeeds.map(normalizeTerm));
   const best = new Map<string, FollowOnCandidate & { score: number }>();
@@ -360,33 +422,32 @@ export function searchSeedKeywords(
     }));
 }
 
+/**
+ * Recommended seeds from live API discovery (high volume + low competition),
+ * diversified across topic probes. Falls back to curated starters if empty.
+ */
 export function buildRecommendations(input: {
   existingSeeds: string[];
-  followOnCandidates?: FollowOnCandidate[];
+  apiCandidates?: ApiSeedCandidate[];
 }) {
   const existing = input.existingSeeds;
-  const niches = CURATED_NICHES.map((n) => {
-    const match = existing.find(
-      (s) => normalizeTerm(s) === normalizeTerm(n.seed),
-    );
-    return {
-      ...n,
-      alreadyRun: Boolean(match),
-    };
-  });
-
-  const followOns = rankFollowOnKeywords(
-    input.followOnCandidates ?? [],
+  const seeds = diversifyApiSeedRecommendations(
+    input.apiCandidates ?? [],
     existing,
+    24,
   );
-  const curatedKeywords = curatedKeywordSuggestions(existing).filter(
-    (k) =>
-      !followOns.some((f) => normalizeTerm(f.term) === normalizeTerm(k.term)),
-  );
+
+  const niches =
+    seeds.length > 0
+      ? []
+      : filterUnusedCurated(existing).map((n) => ({
+          ...n,
+          alreadyRun: false,
+        }));
 
   return {
     niches,
-    keywords: [...followOns, ...curatedKeywords].slice(0, 96),
-    followOns,
+    keywords: seeds,
+    followOns: seeds,
   };
 }

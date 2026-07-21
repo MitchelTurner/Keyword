@@ -63,7 +63,6 @@ export type DecisionSupport = {
     volumeFactor: number;
     cpcFactor: number;
     competitionFactor: number;
-    buyerWeight: number;
     demandScore: number;
     drivers: string[];
   };
@@ -115,8 +114,6 @@ export type RubricConfig = {
   rejectDeclining: boolean;
 };
 
-export type BuyerWeights = Record<string, number>;
-
 export type NicheDetail = {
   id: string;
   seedTerm: string;
@@ -124,7 +121,6 @@ export type NicheDetail = {
   error: string | null;
   convRate: number;
   ltvCacRatio: number;
-  buyerWeights: BuyerWeights;
   rubricConfig: RubricConfig;
   keywordCount: number;
   enrichedKeywordCount: number;
@@ -235,7 +231,6 @@ export const api = {
     body: {
       convRate?: number;
       ltvCacRatio?: number;
-      buyerWeights?: BuyerWeights;
       rubricConfig?: RubricConfig;
       rescore?: boolean;
     },

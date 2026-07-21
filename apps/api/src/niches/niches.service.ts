@@ -19,11 +19,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { PipelineService } from "../pipeline/pipeline.service";
 import { CostService } from "../cost/cost.service";
 import {
-  BUYER_TYPE_WEIGHTS,
   DEFAULT_RUBRIC,
   attachDecisionSupport,
-  mergeBuyerWeights,
-  parseBuyerWeights,
   parseRubricConfig,
 } from "./decision";
 
@@ -212,7 +209,6 @@ export class NichesService {
       }),
     ]);
 
-    const buyerWeights = parseBuyerWeights(niche.buyerWeights);
     const rubricConfig = parseRubricConfig(niche.rubricConfig);
 
     const mapped = niche.opportunities.map((o) =>
@@ -222,7 +218,6 @@ export class NichesService {
       ),
     );
     const opportunities = attachDecisionSupport(mapped, {
-      buyerWeights,
       rubricConfig,
     });
 
@@ -236,7 +231,6 @@ export class NichesService {
       error: niche.error,
       convRate: niche.convRate,
       ltvCacRatio: niche.ltvCacRatio,
-      buyerWeights: mergeBuyerWeights(buyerWeights),
       rubricConfig,
       keywordCount: niche._count.keywords,
       enrichedKeywordCount: enrichedCount,
@@ -252,7 +246,6 @@ export class NichesService {
         passCount,
         failCount: opportunities.length - passCount,
         defaults: {
-          buyerWeights: BUYER_TYPE_WEIGHTS,
           rubricConfig: DEFAULT_RUBRIC,
         },
       },
@@ -281,7 +274,6 @@ export class NichesService {
       },
     });
 
-    const buyerWeights = parseBuyerWeights(niche.buyerWeights);
     const rubricConfig = parseRubricConfig(niche.rubricConfig);
     const withDecision = attachDecisionSupport(
       siblings.map((o) =>
@@ -290,7 +282,7 @@ export class NichesService {
           this.trendFromKeywords(o.keywords),
         ),
       ),
-      { buyerWeights, rubricConfig },
+      { rubricConfig },
     );
 
     const opportunity = await this.prisma.opportunity.findFirst({
@@ -335,7 +327,6 @@ export class NichesService {
             id: true,
             seedTerm: true,
             status: true,
-            buyerWeights: true,
             rubricConfig: true,
           },
         },
@@ -344,7 +335,7 @@ export class NichesService {
       },
     });
 
-    // Decision support is per-niche (weights/rubric), so group then flatten.
+    // Decision support is per-niche (rubric), so group then flatten.
     const byNiche = new Map<string, typeof rows>();
     for (const row of rows) {
       const list = byNiche.get(row.nicheId) ?? [];
@@ -362,7 +353,6 @@ export class NichesService {
           ),
         ),
         {
-          buyerWeights: parseBuyerWeights(niche.buyerWeights),
           rubricConfig: parseRubricConfig(niche.rubricConfig),
         },
       );
@@ -452,9 +442,7 @@ export class NichesService {
     if (!niche) throw new NotFoundException("Niche not found");
 
     const touchesScoring =
-      dto.convRate !== undefined ||
-      dto.ltvCacRatio !== undefined ||
-      dto.buyerWeights !== undefined;
+      dto.convRate !== undefined || dto.ltvCacRatio !== undefined;
     const shouldRescore = dto.rescore ?? touchesScoring;
 
     if (shouldRescore && niche.status !== "DONE" && niche.status !== "FAILED") {
@@ -475,12 +463,6 @@ export class NichesService {
       }
     }
 
-    const nextWeights = dto.buyerWeights
-      ? mergeBuyerWeights({
-          ...parseBuyerWeights(niche.buyerWeights),
-          ...dto.buyerWeights,
-        })
-      : undefined;
     const nextRubric = dto.rubricConfig
       ? { ...parseRubricConfig(niche.rubricConfig), ...dto.rubricConfig }
       : undefined;
@@ -490,10 +472,6 @@ export class NichesService {
       data: {
         convRate: dto.convRate ?? niche.convRate,
         ltvCacRatio: dto.ltvCacRatio ?? niche.ltvCacRatio,
-        buyerWeights:
-          nextWeights === undefined
-            ? undefined
-            : (nextWeights as Prisma.InputJsonValue),
         rubricConfig:
           nextRubric === undefined
             ? undefined

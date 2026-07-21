@@ -32,15 +32,6 @@ export const CreateNicheSchema = z.object({
 });
 export type CreateNicheDto = z.infer<typeof CreateNicheSchema>;
 
-export const BuyerWeightsSchema = z.object({
-  government: z.number().min(0).max(3).optional(),
-  enterprise: z.number().min(0).max(3).optional(),
-  SMB: z.number().min(0).max(3).optional(),
-  prosumer: z.number().min(0).max(3).optional(),
-  consumer: z.number().min(0).max(3).optional(),
-});
-export type BuyerWeightsDto = z.infer<typeof BuyerWeightsSchema>;
-
 export const RubricConfigSchema = z.object({
   minMonthlyFloor: z.number().min(0).max(100000),
   minVolume: z.number().int().min(0).max(10_000_000),
@@ -54,20 +45,18 @@ export const UpdateNicheAssumptionsSchema = z
   .object({
     convRate: z.number().positive().max(1).optional(),
     ltvCacRatio: z.number().positive().max(100).optional(),
-    buyerWeights: BuyerWeightsSchema.optional(),
     rubricConfig: RubricConfigSchema.optional(),
-    /** When true, re-run score after saving weights/assumptions. Default true if scoring fields change. */
+    /** When true, re-run score after saving assumptions. Default true if scoring fields change. */
     rescore: z.boolean().optional(),
   })
   .refine(
     (v) =>
       v.convRate !== undefined ||
       v.ltvCacRatio !== undefined ||
-      v.buyerWeights !== undefined ||
       v.rubricConfig !== undefined,
     {
       message:
-        "At least one of convRate, ltvCacRatio, buyerWeights, or rubricConfig is required",
+        "At least one of convRate, ltvCacRatio, or rubricConfig is required",
     },
   );
 export type UpdateNicheAssumptionsDto = z.infer<

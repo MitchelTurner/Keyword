@@ -1,5 +1,3 @@
-import type { BuyerType } from "./schemas";
-
 export type KeywordMetrics = {
   searchVolume: number | null | undefined;
   cpc: number | null | undefined;
@@ -19,15 +17,6 @@ export type ScoredOpportunity = {
   annualPriceFloor: number;
   monthlyPriceFloor: number;
   demandScore: number;
-};
-
-/** Operator sales-strength weights — edit freely. */
-export const BUYER_TYPE_WEIGHTS: Record<BuyerType, number> = {
-  government: 1.2,
-  enterprise: 1.1,
-  SMB: 1.0,
-  prosumer: 0.8,
-  consumer: 0.6,
 };
 
 export function volumeWeightedMean(
@@ -50,8 +39,6 @@ export function volumeWeightedMean(
 export function scoreOpportunity(
   keywords: KeywordMetrics[],
   assumptions: ScoringAssumptions,
-  buyerType: BuyerType,
-  buyerWeights?: Partial<Record<BuyerType, number>> | null,
 ): ScoredOpportunity {
   const enriched = keywords.filter(
     (k) => k.searchVolume != null && k.searchVolume > 0,
@@ -77,10 +64,8 @@ export function scoreOpportunity(
   const annualPriceFloor = impliedCac / ltvCacRatio;
   const monthlyPriceFloor = annualPriceFloor / 12;
 
-  const weights = { ...BUYER_TYPE_WEIGHTS, ...(buyerWeights ?? {}) };
-  const weight = weights[buyerType] ?? 1.0;
   const demandScore =
-    Math.log10(totalVolume + 1) * avgCpc * (1 + avgCompetition) * weight;
+    Math.log10(totalVolume + 1) * avgCpc * (1 + avgCompetition);
 
   return {
     totalVolume,

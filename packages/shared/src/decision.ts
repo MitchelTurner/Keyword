@@ -1,12 +1,9 @@
-import type { BuyerType } from "./schemas";
-import { BUYER_TYPE_WEIGHTS } from "./scoring";
 import type { TrendDirection } from "./trend";
 
 export type DemandBreakdown = {
   volumeFactor: number;
   cpcFactor: number;
   competitionFactor: number;
-  buyerWeight: number;
   demandScore: number;
   /** Human-readable contribution lines for the UI. */
   drivers: string[];
@@ -64,28 +61,15 @@ export const DEFAULT_RUBRIC: RubricConfig = {
   rejectDeclining: true,
 };
 
-export function mergeBuyerWeights(
-  override?: Partial<Record<BuyerType, number>> | null,
-): Record<BuyerType, number> {
-  return {
-    ...BUYER_TYPE_WEIGHTS,
-    ...(override ?? {}),
-  };
-}
-
 export function explainDemandScore(input: {
   totalVolume: number;
   avgCpc: number;
   avgCompetition: number;
-  buyerType: BuyerType | string;
-  buyerWeights?: Partial<Record<BuyerType, number>> | null;
 }): DemandBreakdown {
-  const weights = mergeBuyerWeights(input.buyerWeights);
-  const buyerWeight = weights[input.buyerType as BuyerType] ?? 1;
   const volumeFactor = Math.log10(input.totalVolume + 1);
   const cpcFactor = input.avgCpc;
   const competitionFactor = 1 + input.avgCompetition;
-  const demandScore = volumeFactor * cpcFactor * competitionFactor * buyerWeight;
+  const demandScore = volumeFactor * cpcFactor * competitionFactor;
 
   const drivers: string[] = [];
   if (volumeFactor >= 3) drivers.push("Strong search volume lifts the log factor");
@@ -99,18 +83,12 @@ export function explainDemandScore(input: {
   else if (input.avgCompetition <= 0.35)
     drivers.push("Lower competition — room to win traffic");
 
-  if (buyerWeight >= 1.1)
-    drivers.push(`Buyer type ${input.buyerType} matches sales strengths`);
-  else if (buyerWeight < 1)
-    drivers.push(`Buyer type ${input.buyerType} is down-weighted`);
-
   if (!drivers.length) drivers.push("Balanced factors — no single dominant driver");
 
   return {
     volumeFactor: round3(volumeFactor),
     cpcFactor: round3(cpcFactor),
     competitionFactor: round3(competitionFactor),
-    buyerWeight: round3(buyerWeight),
     demandScore: round3(demandScore),
     drivers,
   };

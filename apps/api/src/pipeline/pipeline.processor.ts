@@ -1,11 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Job } from "bullmq";
 import { Prisma } from "@prisma/client";
-import {
-  MIN_KEYWORD_VOLUME,
-  scoreOpportunity,
-  type BuyerType,
-} from "@prospector/shared";
+import { MIN_KEYWORD_VOLUME, scoreOpportunity } from "@prospector/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { DataForSeoService } from "../dataforseo/dataforseo.service";
 import { ClaudeService } from "../claude/claude.service";
@@ -595,18 +591,11 @@ export class PipelineProcessor {
       throw new Error(`Score found 0 opportunities for niche ${nicheId}`);
     }
 
-    const buyerWeights =
-      niche.buyerWeights && typeof niche.buyerWeights === "object"
-        ? (niche.buyerWeights as Partial<Record<BuyerType, number>>)
-        : null;
-
     for (const opp of opportunities) {
-      const scored = scoreOpportunity(
-        opp.keywords,
-        { convRate: niche.convRate, ltvCacRatio: niche.ltvCacRatio },
-        opp.buyerType as BuyerType,
-        buyerWeights,
-      );
+      const scored = scoreOpportunity(opp.keywords, {
+        convRate: niche.convRate,
+        ltvCacRatio: niche.ltvCacRatio,
+      });
 
       await this.prisma.opportunity.update({
         where: { id: opp.id },

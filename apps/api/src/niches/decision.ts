@@ -1,22 +1,12 @@
 import {
-  BUYER_TYPE_WEIGHTS,
   DEFAULT_RUBRIC,
   buildBrief,
   evaluateRubric,
   explainDemandScore,
-  mergeBuyerWeights,
-  type BuyerType,
   type RubricConfig,
   type TrendAnalysis,
 } from "@prospector/shared";
 import type { Prisma } from "@prisma/client";
-
-export function parseBuyerWeights(
-  raw: Prisma.JsonValue | null | undefined,
-): Partial<Record<BuyerType, number>> | null {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  return raw as Partial<Record<BuyerType, number>>;
-}
 
 export function parseRubricConfig(
   raw: Prisma.JsonValue | null | undefined,
@@ -62,11 +52,9 @@ export function attachDecisionSupport<
 >(
   opportunities: T[],
   opts: {
-    buyerWeights?: Partial<Record<BuyerType, number>> | null;
     rubricConfig?: RubricConfig;
-  },
+  } = {},
 ) {
-  const weights = mergeBuyerWeights(opts.buyerWeights);
   const rubric = opts.rubricConfig ?? DEFAULT_RUBRIC;
   const scores = opportunities.map((o) => o.demandScore).sort((a, b) => a - b);
   const median =
@@ -86,8 +74,6 @@ export function attachDecisionSupport<
       totalVolume: o.totalVolume,
       avgCpc: o.avgCpc,
       avgCompetition: o.avgCompetition,
-      buyerType: o.buyerType,
-      buyerWeights: weights,
     });
     const rubricResult = evaluateRubric(
       {
@@ -129,4 +115,4 @@ export function attachDecisionSupport<
   });
 }
 
-export { BUYER_TYPE_WEIGHTS, DEFAULT_RUBRIC, mergeBuyerWeights };
+export { DEFAULT_RUBRIC };

@@ -6,12 +6,11 @@ import {
   type ReactNode,
 } from "react";
 import { Link, useParams } from "react-router-dom";
-import { priceFloors, type BuyerType } from "@prospector/shared";
+import { priceFloors } from "@prospector/shared";
 import {
   api,
   money,
   num,
-  type BuyerWeights,
   type NicheDetail,
   type OpportunityDetail,
   type OpportunityRow,
@@ -37,14 +36,6 @@ type SortKey =
   | "reviewStatus"
   | "trendScore";
 
-const BUYER_KEYS: BuyerType[] = [
-  "government",
-  "enterprise",
-  "SMB",
-  "prosumer",
-  "consumer",
-];
-
 const IN_FLIGHT = new Set([
   "PENDING",
   "EXPANDING",
@@ -63,30 +54,12 @@ const REVIEW_OPTIONS = [
 const inputClass =
   "mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-2 py-1.5 text-sm text-zinc-100 outline-none ring-emerald-500/25 focus:border-emerald-700 focus:ring";
 
-function emptyWeights(): BuyerWeights {
-  return {
-    government: 1.2,
-    enterprise: 1.1,
-    SMB: 1.0,
-    prosumer: 0.8,
-    consumer: 0.6,
-  };
-}
-
-function syncDecisionState(data: NicheDetail) {
-  return {
-    buyerWeights: { ...emptyWeights(), ...data.buyerWeights },
-    rubricConfig: { ...data.rubricConfig },
-  };
-}
-
 export default function NicheDetailPage() {
   const { id = "" } = useParams();
   const [niche, setNiche] = useState<NicheDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [convRate, setConvRate] = useState("");
   const [ltvCacRatio, setLtvCacRatio] = useState("");
-  const [buyerWeights, setBuyerWeights] = useState<BuyerWeights>(emptyWeights);
   const [rubricConfig, setRubricConfig] = useState<RubricConfig>({
     minMonthlyFloor: 49,
     minVolume: 500,
@@ -110,9 +83,7 @@ export default function NicheDetailPage() {
     setNiche(data);
     setConvRate(String(data.convRate));
     setLtvCacRatio(String(data.ltvCacRatio));
-    const synced = syncDecisionState(data);
-    setBuyerWeights(synced.buyerWeights);
-    setRubricConfig(synced.rubricConfig);
+    setRubricConfig({ ...data.rubricConfig });
   }
 
   useEffect(() => {
@@ -221,16 +192,9 @@ export default function NicheDetailPage() {
     setSavingDecision(true);
     setError(null);
     try {
-      const weightsChanged = BUYER_KEYS.some(
-        (k) =>
-          Math.abs(
-            Number(buyerWeights[k] ?? 0) - Number(niche.buyerWeights[k] ?? 0),
-          ) > 1e-9,
-      );
       await api.updateAssumptions(id, {
-        buyerWeights,
         rubricConfig,
-        rescore: weightsChanged,
+        rescore: false,
       });
       await refresh();
     } catch (err) {
@@ -466,7 +430,7 @@ export default function NicheDetailPage() {
           <span className="inline-flex w-full items-center justify-between gap-2">
             <span>Decision config</span>
             <span className="text-xs font-normal text-zinc-500">
-              {decisionOpen ? "Hide" : "Demand weights & pass/fail thresholds"}
+              {decisionOpen ? "Hide" : "Pass/fail rubric thresholds"}
             </span>
           </span>
         </summary>
@@ -474,126 +438,91 @@ export default function NicheDetailPage() {
           onSubmit={onSaveDecisionConfig}
           className="space-y-4 border-t border-zinc-800/80 px-4 py-3"
         >
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">
-              Demand weights
-            </p>
-            <p className="text-xs text-zinc-500">
-              Multipliers for theme demand score by inferred buyer type. Use
-              weights instead of hard buyer allowlists.
-            </p>
-            <div className="grid gap-3 sm:grid-cols-5">
-              {BUYER_KEYS.map((key) => (
-                <label key={key} className="block text-xs text-zinc-500">
-                  {key}
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0"
-                    max="3"
-                    value={buyerWeights[key] ?? ""}
-                    onChange={(e) =>
-                      setBuyerWeights((prev) => ({
-                        ...prev,
-                        [key]: Number(e.target.value),
-                      }))
-                    }
-                    className={inputClass}
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">
-              Pass / fail rubric
-            </p>
-            <p className="text-xs text-zinc-500">
-              Themes must clear every threshold to pass. Buyer type is scored
-              via weights above, not as a hard filter.
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <label className="block text-xs text-zinc-500">
-                Min monthly floor ($)
-                <input
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={rubricConfig.minMonthlyFloor}
-                  onChange={(e) =>
-                    setRubricConfig((prev) => ({
-                      ...prev,
-                      minMonthlyFloor: Number(e.target.value),
-                    }))
-                  }
-                  className={inputClass}
-                />
-              </label>
-              <label className="block text-xs text-zinc-500">
-                Min theme volume
-                <input
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={rubricConfig.minVolume}
-                  onChange={(e) =>
-                    setRubricConfig((prev) => ({
-                      ...prev,
-                      minVolume: Number(e.target.value),
-                    }))
-                  }
-                  className={inputClass}
-                />
-              </label>
-              <label className="block text-xs text-zinc-500">
-                Min pain (1–5)
-                <input
-                  type="number"
-                  step="1"
-                  min="1"
-                  max="5"
-                  value={rubricConfig.minPain}
-                  onChange={(e) =>
-                    setRubricConfig((prev) => ({
-                      ...prev,
-                      minPain: Number(e.target.value),
-                    }))
-                  }
-                  className={inputClass}
-                />
-              </label>
-              <label className="block text-xs text-zinc-500">
-                Max competition (0–1)
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="1"
-                  value={rubricConfig.maxCompetition}
-                  onChange={(e) =>
-                    setRubricConfig((prev) => ({
-                      ...prev,
-                      maxCompetition: Number(e.target.value),
-                    }))
-                  }
-                  className={inputClass}
-                />
-              </label>
-              <label className="flex items-end gap-2 pb-2 text-xs text-zinc-500 sm:col-span-2 lg:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={rubricConfig.rejectDeclining}
-                  onChange={(e) =>
-                    setRubricConfig((prev) => ({
-                      ...prev,
-                      rejectDeclining: e.target.checked,
-                    }))
-                  }
-                  className="accent-emerald-500"
-                />
-                Fail themes with a declining trend
-              </label>
-            </div>
+          <p className="text-xs text-zinc-500">
+            Themes must clear every threshold to pass. Demand score uses volume,
+            CPC, and competition only.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="block text-xs text-zinc-500">
+              Min monthly floor ($)
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={rubricConfig.minMonthlyFloor}
+                onChange={(e) =>
+                  setRubricConfig((prev) => ({
+                    ...prev,
+                    minMonthlyFloor: Number(e.target.value),
+                  }))
+                }
+                className={inputClass}
+              />
+            </label>
+            <label className="block text-xs text-zinc-500">
+              Min theme volume
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={rubricConfig.minVolume}
+                onChange={(e) =>
+                  setRubricConfig((prev) => ({
+                    ...prev,
+                    minVolume: Number(e.target.value),
+                  }))
+                }
+                className={inputClass}
+              />
+            </label>
+            <label className="block text-xs text-zinc-500">
+              Min pain (1–5)
+              <input
+                type="number"
+                step="1"
+                min="1"
+                max="5"
+                value={rubricConfig.minPain}
+                onChange={(e) =>
+                  setRubricConfig((prev) => ({
+                    ...prev,
+                    minPain: Number(e.target.value),
+                  }))
+                }
+                className={inputClass}
+              />
+            </label>
+            <label className="block text-xs text-zinc-500">
+              Max competition (0–1)
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="1"
+                value={rubricConfig.maxCompetition}
+                onChange={(e) =>
+                  setRubricConfig((prev) => ({
+                    ...prev,
+                    maxCompetition: Number(e.target.value),
+                  }))
+                }
+                className={inputClass}
+              />
+            </label>
+            <label className="flex items-end gap-2 pb-2 text-xs text-zinc-500 sm:col-span-2 lg:col-span-2">
+              <input
+                type="checkbox"
+                checked={rubricConfig.rejectDeclining}
+                onChange={(e) =>
+                  setRubricConfig((prev) => ({
+                    ...prev,
+                    rejectDeclining: e.target.checked,
+                  }))
+                }
+                className="accent-emerald-500"
+              />
+              Fail themes with a declining trend
+            </label>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -604,8 +533,7 @@ export default function NicheDetailPage() {
               {savingDecision ? "Saving…" : "Save decision config"}
             </button>
             <p className="text-xs text-zinc-500">
-              Weight changes re-score demand; rubric-only edits refresh
-              pass/fail without a full pipeline re-run.
+              Rubric edits refresh pass/fail without a full pipeline re-run.
             </p>
           </div>
         </form>
@@ -1135,8 +1063,7 @@ function OpportunityDrawer({
               <p className="mt-1 font-mono text-sm text-zinc-200">
                 {decision.breakdown.volumeFactor} ×{" "}
                 {decision.breakdown.cpcFactor} ×{" "}
-                {decision.breakdown.competitionFactor} ×{" "}
-                {decision.breakdown.buyerWeight} ={" "}
+                {decision.breakdown.competitionFactor} ={" "}
                 <span className="text-emerald-300">
                   {decision.breakdown.demandScore}
                 </span>

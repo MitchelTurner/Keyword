@@ -7,18 +7,13 @@ import {
 } from "./decision";
 
 describe("explainDemandScore", () => {
-  it("factors volume, cpc, competition, and buyer weight", () => {
+  it("factors volume, cpc, and competition", () => {
     const b = explainDemandScore({
       totalVolume: 999,
       avgCpc: 10,
       avgCompetition: 0.5,
-      buyerType: "enterprise",
     });
-    expect(b.buyerWeight).toBe(1.1);
-    expect(b.demandScore).toBeCloseTo(
-      Math.log10(1000) * 10 * 1.5 * 1.1,
-      2,
-    );
+    expect(b.demandScore).toBeCloseTo(Math.log10(1000) * 10 * 1.5, 2);
     expect(b.drivers.length).toBeGreaterThan(0);
   });
 });

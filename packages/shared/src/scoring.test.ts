@@ -26,14 +26,13 @@ describe("volumeWeightedMean", () => {
 });
 
 describe("scoreOpportunity", () => {
-  it("computes floors and demand score with buyer weighting", () => {
+  it("computes floors and demand score from volume, CPC, competition", () => {
     const scored = scoreOpportunity(
       [
         { searchVolume: 1000, cpc: 5, competition: 0.5 },
         { searchVolume: 1000, cpc: 3, competition: 0.5 },
       ],
       { convRate: 0.02, ltvCacRatio: 4 },
-      "enterprise",
     );
 
     expect(scored.totalVolume).toBe(2000);
@@ -43,19 +42,8 @@ describe("scoreOpportunity", () => {
     expect(scored.annualPriceFloor).toBeCloseTo(50);
     expect(scored.monthlyPriceFloor).toBeCloseTo(50 / 12);
 
-    const base =
-      Math.log10(2000 + 1) * 4 * (1 + 0.5);
-    expect(scored.demandScore).toBeCloseTo(base * 1.1);
-  });
-
-  it("applies consumer weight 0.6", () => {
-    const scored = scoreOpportunity(
-      [{ searchVolume: 100, cpc: 2, competition: 0 }],
-      { convRate: 0.015, ltvCacRatio: 3 },
-      "consumer",
-    );
-    const base = Math.log10(101) * 2 * 1;
-    expect(scored.demandScore).toBeCloseTo(base * 0.6);
+    const base = Math.log10(2000 + 1) * 4 * (1 + 0.5);
+    expect(scored.demandScore).toBeCloseTo(base);
   });
 
   it("excludes null-volume keywords from totals", () => {
@@ -65,7 +53,6 @@ describe("scoreOpportunity", () => {
         { searchVolume: 50, cpc: 1, competition: 0.2 },
       ],
       { convRate: 0.015, ltvCacRatio: 3 },
-      "SMB",
     );
     expect(scored.totalVolume).toBe(50);
     expect(scored.avgCpc).toBe(1);

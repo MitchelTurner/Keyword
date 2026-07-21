@@ -50,13 +50,27 @@ export class PipelineProcessor {
     }
   }
 
-  async runFrom(nicheId: string, start: PipelineJobName) {
+  async runFrom(
+    nicheId: string,
+    start: PipelineJobName,
+    isCancelled?: () => boolean,
+  ) {
     const startIdx = STAGES.indexOf(start);
     if (startIdx < 0) {
       throw new Error(`Unknown job type: ${start}`);
     }
 
     for (let i = startIdx; i < STAGES.length; i++) {
+      if (isCancelled?.()) {
+        this.logger.warn(
+          JSON.stringify({
+            event: "pipeline_cancelled",
+            nicheId,
+            at: STAGES[i],
+          }),
+        );
+        return;
+      }
       const stage = STAGES[i]!;
       this.logger.log(
         JSON.stringify({ event: "pipeline_stage_start", nicheId, stage }),

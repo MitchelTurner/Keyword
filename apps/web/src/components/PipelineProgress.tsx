@@ -44,7 +44,8 @@ export default function PipelineProgress({
   if (idx < 0 || status === "DONE") return null;
 
   const ageMs = updatedAt ? Date.now() - new Date(updatedAt).getTime() : 0;
-  const stuck = ageMs > 2 * 60 * 1000;
+  // Match server sweeper (~90s); show resume a bit sooner for operators.
+  const stuck = ageMs > 75_000;
 
   return (
     <div className="animate-fade-up rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-3">
@@ -86,7 +87,7 @@ export default function PipelineProgress({
       {stuck && onResume && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-[11px] text-amber-300/90">
-            No progress for 2+ minutes — worker may be stuck.
+            No progress for ~75s — click resume to force an in-process run.
           </span>
           <button
             type="button"

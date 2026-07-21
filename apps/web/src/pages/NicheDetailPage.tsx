@@ -379,8 +379,7 @@ export default function NicheDetailPage() {
           )}
           {(niche.status === "FAILED" ||
             (IN_FLIGHT.has(niche.status) &&
-              Date.now() - new Date(niche.updatedAt).getTime() >
-                2 * 60 * 1000)) && (
+              Date.now() - new Date(niche.updatedAt).getTime() > 75_000)) && (
             <button
               type="button"
               onClick={onRetry}

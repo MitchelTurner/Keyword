@@ -5,6 +5,7 @@ import { DataForSeoModule } from "../dataforseo/dataforseo.module";
 import { ClaudeModule } from "../claude/claude.module";
 import { PipelineService } from "./pipeline.service";
 import { PipelineProcessor } from "./pipeline.processor";
+import { PipelineRunner } from "./pipeline.runner";
 import { PipelineWorker } from "./pipeline.worker";
 import { NICHE_PIPELINE_QUEUE, PIPELINE_QUEUE } from "./pipeline.constants";
 import { redisConnection, resolveRedisUrl } from "../redis";
@@ -13,6 +14,7 @@ import { redisConnection, resolveRedisUrl } from "../redis";
   imports: [DataForSeoModule, ClaudeModule],
   providers: [
     PipelineProcessor,
+    PipelineRunner,
     PipelineService,
     PipelineWorker,
     {
@@ -27,6 +29,6 @@ import { redisConnection, resolveRedisUrl } from "../redis";
       },
     },
   ],
-  exports: [PipelineService, PIPELINE_QUEUE],
+  exports: [PipelineService, PIPELINE_QUEUE, PipelineRunner],
 })
 export class PipelineModule {}

@@ -1,8 +1,14 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+} from "@nestjs/common";
 import { NicheStatus } from "@prisma/client";
 import { Queue } from "bullmq";
 import { PrismaService } from "../prisma/prisma.service";
 import { PIPELINE_QUEUE, type PipelineJobName } from "./pipeline.constants";
+import { PipelineRunner } from "./pipeline.runner";
 
 const STATUS_TO_JOB: Record<NicheStatus, PipelineJobName | null> = {
   PENDING: "expand",
@@ -24,24 +30,44 @@ const IN_FLIGHT: NicheStatus[] = [
 
 @Injectable()
 export class PipelineService {
+  private readonly logger = new Logger(PipelineService.name);
+
   constructor(
     @Inject(PIPELINE_QUEUE) private readonly queue: Queue,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PipelineRunner) private readonly runner: PipelineRunner,
   ) {}
 
-  async enqueue(jobName: PipelineJobName, nicheId: string) {
-    // Stable-ish id so rapid retries don't stack duplicate active jobs.
-    const jobId = `${jobName}:${nicheId}:${Date.now()}`;
-    await this.queue.add(
-      jobName,
-      { nicheId },
-      {
-        jobId,
-        removeOnComplete: 100,
-        removeOnFail: 200,
-        attempts: 1,
-      },
-    );
+  /**
+   * Start a stage: in-process first (reliable), Redis queue second (backup).
+   */
+  async enqueue(
+    jobName: PipelineJobName,
+    nicheId: string,
+    opts: { force?: boolean } = {},
+  ) {
+    // Primary path — never block niche creation on Redis.
+    this.runner.start(nicheId, jobName, { force: opts.force });
+
+    // Best-effort backup queue (do not await — a bad Redis can hang forever).
+    void this.queue
+      .add(
+        jobName,
+        { nicheId },
+        {
+          jobId: `${jobName}:${nicheId}:${Date.now()}`,
+          removeOnComplete: 100,
+          removeOnFail: 200,
+          attempts: 1,
+        },
+      )
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `Redis enqueue failed for ${nicheId}/${jobName} (in-process running): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
   }
 
   async enqueueExpand(nicheId: string) {
@@ -57,45 +83,28 @@ export class PipelineService {
   }
 
   /**
-   * Resume a failed or stuck in-flight niche from the best inferred stage.
+   * Resume a failed or in-flight niche from the best inferred stage.
    */
   async retryFailed(nicheId: string) {
     const niche = await this.prisma.niche.findUniqueOrThrow({
       where: { id: nicheId },
     });
 
-    const stuckInFlight =
-      IN_FLIGHT.includes(niche.status) &&
-      Date.now() - niche.updatedAt.getTime() > 2 * 60 * 1000;
-
-    if (niche.status !== "FAILED" && !stuckInFlight) {
-      if (IN_FLIGHT.includes(niche.status)) {
-        throw new BadRequestException(
-          "Pipeline still running. Wait 2 minutes without progress, then resume.",
-        );
-      }
-      throw new BadRequestException("Niche is not failed or stuck");
+    if (niche.status === "DONE") {
+      throw new BadRequestException("Niche is already DONE");
+    }
+    if (niche.status !== "FAILED" && !IN_FLIGHT.includes(niche.status)) {
+      throw new BadRequestException("Niche is not failed or in-flight");
     }
 
-    const [keywordCount, enrichedCount, oppCount] = await Promise.all([
-      this.prisma.keyword.count({ where: { nicheId } }),
-      this.prisma.keyword.count({
-        where: { nicheId, searchVolume: { not: null } },
-      }),
-      this.prisma.opportunity.count({ where: { nicheId } }),
-    ]);
-
-    let job: PipelineJobName = "expand";
-    if (oppCount > 0) job = "score";
-    else if (enrichedCount > 0) job = "classify";
-    else if (keywordCount > 0) job = "enrich";
+    const job = await this.runner.inferStage(nicheId);
 
     await this.prisma.niche.update({
       where: { id: nicheId },
       data: { error: null, status: this.statusForJob(job) },
     });
 
-    await this.enqueue(job, nicheId);
+    await this.enqueue(job, nicheId, { force: true });
     return job;
   }
 

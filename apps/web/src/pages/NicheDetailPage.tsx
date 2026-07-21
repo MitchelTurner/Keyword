@@ -1,17 +1,20 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { priceFloors } from "@prospector/shared";
+import { priceFloors, type BuyerType } from "@prospector/shared";
 import {
   api,
   money,
   num,
+  type BuyerWeights,
   type NicheDetail,
   type OpportunityDetail,
   type OpportunityRow,
+  type RubricConfig,
 } from "../api";
 import StatusBadge from "../components/StatusBadge";
 import Sparkline from "../components/Sparkline";
 import TrendBadge from "../components/TrendBadge";
+import RubricBadge from "../components/RubricBadge";
 
 type SortKey =
   | "demandScore"
@@ -24,6 +27,14 @@ type SortKey =
   | "buyerType"
   | "reviewStatus"
   | "trendScore";
+
+const BUYER_KEYS: BuyerType[] = [
+  "government",
+  "enterprise",
+  "SMB",
+  "prosumer",
+  "consumer",
+];
 
 const IN_FLIGHT = new Set([
   "PENDING",
@@ -40,13 +51,44 @@ const REVIEW_OPTIONS = [
   { value: "passed", label: "Passed" },
 ] as const;
 
+function emptyWeights(): BuyerWeights {
+  return {
+    government: 1.2,
+    enterprise: 1.1,
+    SMB: 1.0,
+    prosumer: 0.8,
+    consumer: 0.6,
+  };
+}
+
+function syncDecisionState(data: NicheDetail) {
+  return {
+    buyerWeights: { ...emptyWeights(), ...data.buyerWeights },
+    rubricConfig: { ...data.rubricConfig },
+    preferredBuyersText: data.rubricConfig.preferredBuyers.join(", "),
+  };
+}
+
 export default function NicheDetailPage() {
   const { id = "" } = useParams();
   const [niche, setNiche] = useState<NicheDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [convRate, setConvRate] = useState("");
   const [ltvCacRatio, setLtvCacRatio] = useState("");
+  const [buyerWeights, setBuyerWeights] = useState<BuyerWeights>(emptyWeights);
+  const [rubricConfig, setRubricConfig] = useState<RubricConfig>({
+    minMonthlyFloor: 49,
+    minVolume: 500,
+    minPain: 3,
+    maxCompetition: 0.85,
+    preferredBuyers: ["government", "enterprise", "SMB"],
+    rejectDeclining: true,
+  });
+  const [preferredBuyersText, setPreferredBuyersText] = useState(
+    "government, enterprise, SMB",
+  );
   const [saving, setSaving] = useState(false);
+  const [savingDecision, setSavingDecision] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("demandScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [selectedOppId, setSelectedOppId] = useState<string | null>(null);
@@ -57,6 +99,10 @@ export default function NicheDetailPage() {
     setNiche(data);
     setConvRate(String(data.convRate));
     setLtvCacRatio(String(data.ltvCacRatio));
+    const synced = syncDecisionState(data);
+    setBuyerWeights(synced.buyerWeights);
+    setRubricConfig(synced.rubricConfig);
+    setPreferredBuyersText(synced.preferredBuyersText);
   }
 
   useEffect(() => {
@@ -150,6 +196,44 @@ export default function NicheDetailPage() {
     }
   }
 
+  function parsePreferredBuyers(text: string): BuyerType[] {
+    const allowed = new Set<string>(BUYER_KEYS);
+    const parsed = text
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s): s is BuyerType => allowed.has(s));
+    return parsed.length > 0 ? parsed : ["government", "enterprise", "SMB"];
+  }
+
+  async function onSaveDecisionConfig(e: FormEvent) {
+    e.preventDefault();
+    if (!niche) return;
+    setSavingDecision(true);
+    setError(null);
+    try {
+      const preferredBuyers = parsePreferredBuyers(preferredBuyersText);
+      const nextRubric: RubricConfig = {
+        ...rubricConfig,
+        preferredBuyers,
+      };
+      const weightsChanged = BUYER_KEYS.some(
+        (k) =>
+          Math.abs(Number(buyerWeights[k] ?? 0) - Number(niche.buyerWeights[k] ?? 0)) >
+          1e-9,
+      );
+      await api.updateAssumptions(id, {
+        buyerWeights,
+        rubricConfig: nextRubric,
+        rescore: weightsChanged,
+      });
+      await refresh();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSavingDecision(false);
+    }
+  }
+
   async function onRetry() {
     await api.retry(id);
     await refresh();
@@ -212,6 +296,10 @@ export default function NicheDetailPage() {
             <StatusBadge status={niche.status} />
             <span>{num(niche.keywordCount)} keywords</span>
             <span>{num(niche.enrichedKeywordCount)} enriched</span>
+            <span>
+              {niche.decisionSummary.passCount} pass ·{" "}
+              {niche.decisionSummary.failCount} fail
+            </span>
             <span>
               cost {money(niche.costs.total, 4)}
               <span className="text-zinc-600">
@@ -318,6 +406,139 @@ export default function NicheDetailPage() {
         </p>
       </form>
 
+      <form
+        onSubmit={onSaveDecisionConfig}
+        className="space-y-3 rounded border border-zinc-800 bg-zinc-900/40 p-4"
+      >
+        <h2 className="text-sm font-medium text-zinc-200">Decision config</h2>
+        <div className="grid gap-3 sm:grid-cols-5">
+          {BUYER_KEYS.map((key) => (
+            <label key={key} className="block text-xs text-zinc-500">
+              {key} weight
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                max="3"
+                value={buyerWeights[key] ?? ""}
+                onChange={(e) =>
+                  setBuyerWeights((prev) => ({
+                    ...prev,
+                    [key]: Number(e.target.value),
+                  }))
+                }
+                className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+              />
+            </label>
+          ))}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="block text-xs text-zinc-500">
+            Min monthly floor
+            <input
+              type="number"
+              step="1"
+              min="0"
+              value={rubricConfig.minMonthlyFloor}
+              onChange={(e) =>
+                setRubricConfig((prev) => ({
+                  ...prev,
+                  minMonthlyFloor: Number(e.target.value),
+                }))
+              }
+              className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+            />
+          </label>
+          <label className="block text-xs text-zinc-500">
+            Min volume
+            <input
+              type="number"
+              step="1"
+              min="0"
+              value={rubricConfig.minVolume}
+              onChange={(e) =>
+                setRubricConfig((prev) => ({
+                  ...prev,
+                  minVolume: Number(e.target.value),
+                }))
+              }
+              className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+            />
+          </label>
+          <label className="block text-xs text-zinc-500">
+            Min pain
+            <input
+              type="number"
+              step="1"
+              min="1"
+              max="5"
+              value={rubricConfig.minPain}
+              onChange={(e) =>
+                setRubricConfig((prev) => ({
+                  ...prev,
+                  minPain: Number(e.target.value),
+                }))
+              }
+              className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+            />
+          </label>
+          <label className="block text-xs text-zinc-500">
+            Max competition
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="1"
+              value={rubricConfig.maxCompetition}
+              onChange={(e) =>
+                setRubricConfig((prev) => ({
+                  ...prev,
+                  maxCompetition: Number(e.target.value),
+                }))
+              }
+              className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+            />
+          </label>
+          <label className="flex items-end gap-2 text-xs text-zinc-500 pb-2">
+            <input
+              type="checkbox"
+              checked={rubricConfig.rejectDeclining}
+              onChange={(e) =>
+                setRubricConfig((prev) => ({
+                  ...prev,
+                  rejectDeclining: e.target.checked,
+                }))
+              }
+              className="accent-emerald-500"
+            />
+            Reject declining trend
+          </label>
+          <label className="block text-xs text-zinc-500 sm:col-span-2 lg:col-span-1">
+            Preferred buyers
+            <input
+              type="text"
+              value={preferredBuyersText}
+              onChange={(e) => setPreferredBuyersText(e.target.value)}
+              placeholder="government, enterprise, SMB"
+              className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+            />
+          </label>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={savingDecision || IN_FLIGHT.has(niche.status)}
+            className="rounded border border-zinc-600 bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-100 disabled:opacity-50"
+          >
+            {savingDecision ? "Saving…" : "Save decision config"}
+          </button>
+          <p className="text-xs text-zinc-500">
+            Weight changes re-score demand; rubric-only edits update pass/fail
+            without a full re-score when possible.
+          </p>
+        </div>
+      </form>
+
       {error && (
         <div className="rounded border border-rose-900 bg-rose-950/40 px-3 py-2 text-sm text-rose-300">
           {error}
@@ -325,7 +546,7 @@ export default function NicheDetailPage() {
       )}
 
       <div className="overflow-x-auto rounded border border-zinc-800">
-        <table className="w-full min-w-[1180px] text-left text-sm">
+        <table className="w-full min-w-[1280px] text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase tracking-wide text-zinc-500">
             <tr>
               {(
@@ -333,6 +554,22 @@ export default function NicheDetailPage() {
                   ["productDescription", "Product"],
                   ["buyerType", "Buyer"],
                   ["reviewStatus", "Status"],
+                ] as Array<[SortKey, string]>
+              ).map(([key, label]) => (
+                <th key={key} className="px-3 py-2 font-medium">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort(key)}
+                    className="hover:text-zinc-300"
+                  >
+                    {label}
+                    {sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                  </button>
+                </th>
+              ))}
+              <th className="px-3 py-2 font-medium">Rubric</th>
+              {(
+                [
                   ["trendScore", "Trend"],
                   ["totalVolume", "Volume"],
                   ["avgCpc", "Avg CPC"],
@@ -358,7 +595,7 @@ export default function NicheDetailPage() {
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={10}
                   className="px-3 py-8 text-center text-zinc-500"
                 >
                   {IN_FLIGHT.has(niche.status)
@@ -420,13 +657,19 @@ function OpportunityTableRow({
           {row.productDescription}
         </span>
         <div className="text-[11px] text-zinc-500">
-          {row.keywordCount} keywords · {row.intent}
+          #{row.decision.rank} · {row.keywordCount} keywords · {row.intent}
           {row.notes ? " · has notes" : ""}
         </div>
       </td>
       <td className="px-3 py-2 text-zinc-300">{row.buyerType}</td>
       <td className="px-3 py-2 text-zinc-400">
         {row.reviewStatus === "none" ? "—" : row.reviewStatus}
+      </td>
+      <td className="px-3 py-2">
+        <RubricBadge
+          pass={row.decision.rubric.pass}
+          score={row.decision.rubric.score}
+        />
       </td>
       <td className="px-3 py-2">
         <div className="flex flex-col gap-1">
@@ -467,6 +710,7 @@ function OpportunityDrawer({
   const [notes, setNotes] = useState(detail.notes);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const { decision } = detail;
 
   useEffect(() => {
     setNotes(detail.notes);
@@ -502,9 +746,14 @@ function OpportunityDrawer({
             {detail.productDescription}
           </h2>
           <p className="mt-1 text-sm text-zinc-400">
-            {detail.buyerType} · {detail.intent} · pain {detail.painSeverity}/5
+            #{decision.rank} · {detail.buyerType} · {detail.intent} · pain{" "}
+            {detail.painSeverity}/5
           </p>
           <div className="mt-2 flex items-center gap-3">
+            <RubricBadge
+              pass={decision.rubric.pass}
+              score={decision.rubric.score}
+            />
             <TrendBadge trend={detail.trend} />
             <Sparkline data={detail.trend.series} width={100} />
           </div>
@@ -571,6 +820,62 @@ function OpportunityDrawer({
           <span className="text-xs text-rose-400">{saveError}</span>
         )}
       </div>
+
+      <section className="mt-4 space-y-3 rounded border border-zinc-800 bg-zinc-900/40 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium text-zinc-200">Decision support</h3>
+          <RubricBadge
+            pass={decision.rubric.pass}
+            score={decision.rubric.score}
+          />
+        </div>
+        <div className="space-y-1 text-sm text-zinc-300">
+          <p>{decision.brief.summary}</p>
+          <p className="text-zinc-400">{decision.brief.whyRanks}</p>
+          <p className="text-emerald-300/90">Next: {decision.brief.nextStep}</p>
+        </div>
+        <div>
+          <p className="text-xs uppercase tracking-wide text-zinc-500">
+            Demand breakdown
+          </p>
+          <p className="mt-1 font-mono text-sm text-zinc-200">
+            {decision.breakdown.volumeFactor} × {decision.breakdown.cpcFactor} ×{" "}
+            {decision.breakdown.competitionFactor} ×{" "}
+            {decision.breakdown.buyerWeight} ={" "}
+            <span className="text-emerald-300">
+              {decision.breakdown.demandScore}
+            </span>
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-zinc-400">
+            {decision.breakdown.drivers.map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="text-xs uppercase tracking-wide text-zinc-500">
+            Rubric checks
+          </p>
+          <ul className="mt-1 space-y-1">
+            {decision.rubric.checks.map((c) => (
+              <li
+                key={c.id}
+                className="flex flex-wrap items-baseline gap-x-2 text-sm"
+              >
+                <span
+                  className={
+                    c.pass ? "text-emerald-400" : "text-rose-400"
+                  }
+                >
+                  {c.pass ? "Pass" : "Fail"}
+                </span>
+                <span className="text-zinc-200">{c.label}</span>
+                <span className="text-xs text-zinc-500">{c.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
 
       <p className="mt-3 text-sm leading-relaxed text-zinc-300">
         {detail.reasoning}

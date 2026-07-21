@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import {
+  MIN_KEYWORD_VOLUME,
   analyzeOpportunityTrend,
   buildRecommendations,
   estimateRunCost,
@@ -184,10 +185,19 @@ export class NichesService {
     const [costs, enrichedCount, keywordRows] = await Promise.all([
       this.cost.totalsByNiche(id),
       this.prisma.keyword.count({
-        where: { nicheId: id, searchVolume: { not: null } },
+        where: {
+          nicheId: id,
+          searchVolume: { gte: MIN_KEYWORD_VOLUME },
+        },
       }),
       this.prisma.keyword.findMany({
-        where: { nicheId: id },
+        where: {
+          nicheId: id,
+          OR: [
+            { searchVolume: { gte: MIN_KEYWORD_VOLUME } },
+            { searchVolume: null },
+          ],
+        },
         orderBy: [{ searchVolume: "desc" }, { term: "asc" }],
         take: 500,
         select: {

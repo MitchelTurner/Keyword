@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Job } from "bullmq";
 import { Prisma } from "@prisma/client";
 import {
+  MIN_KEYWORD_VOLUME,
   scoreOpportunity,
   type BuyerType,
 } from "@prospector/shared";
@@ -313,12 +314,33 @@ export class PipelineProcessor {
       );
     }
 
+    // Drop keywords below the volume floor (unenriched nulls are left alone).
+    const pruned = await this.prisma.keyword.deleteMany({
+      where: {
+        nicheId,
+        searchVolume: { lt: MIN_KEYWORD_VOLUME },
+      },
+    });
+    if (pruned.count > 0) {
+      this.logger.log(
+        JSON.stringify({
+          event: "enrich_volume_prune",
+          nicheId,
+          removed: pruned.count,
+          minVolume: MIN_KEYWORD_VOLUME,
+        }),
+      );
+    }
+
     const enrichedCount = await this.prisma.keyword.count({
-      where: { nicheId, searchVolume: { not: null } },
+      where: {
+        nicheId,
+        searchVolume: { gte: MIN_KEYWORD_VOLUME },
+      },
     });
     if (enrichedCount === 0) {
       throw new Error(
-        `Enrich finished with 0 volume rows (fetched ${termsNeedingFetch.length}, applied ${applied}). Check DataForSEO credentials/response.`,
+        `Enrich finished with 0 keywords at volume ≥ ${MIN_KEYWORD_VOLUME} (fetched ${termsNeedingFetch.length}, applied ${applied}). Try a broader seed.`,
       );
     }
 
@@ -362,7 +384,7 @@ export class PipelineProcessor {
     const keywords = await this.prisma.keyword.findMany({
       where: {
         nicheId,
-        searchVolume: { not: null },
+        searchVolume: { gte: MIN_KEYWORD_VOLUME },
       },
       select: {
         id: true,
@@ -373,19 +395,17 @@ export class PipelineProcessor {
       },
     });
 
-    const classifiable = keywords
-      .filter((k) => (k.searchVolume ?? 0) > 0)
-      .map((k) => ({
-        id: k.id,
-        term: k.term,
-        searchVolume: k.searchVolume ?? 0,
-        cpc: k.cpc ?? 0,
-        competition: k.competition ?? 0,
-      }));
+    const classifiable = keywords.map((k) => ({
+      id: k.id,
+      term: k.term,
+      searchVolume: k.searchVolume ?? 0,
+      cpc: k.cpc ?? 0,
+      competition: k.competition ?? 0,
+    }));
 
     if (classifiable.length === 0) {
       throw new Error(
-        `No enriched keywords with search volume > 0 for niche ${nicheId} (${keywords.length} rows had volume data). Check DataForSEO enrich parsing.`,
+        `No keywords with search volume ≥ ${MIN_KEYWORD_VOLUME} for niche ${nicheId}. Try a broader seed.`,
       );
     }
 

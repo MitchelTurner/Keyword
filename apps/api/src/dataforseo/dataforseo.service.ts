@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   KeywordIdeaItemSchema,
+  MIN_KEYWORD_VOLUME,
   SearchVolumeItemSchema,
   filterRelevantKeywords,
   normalizeCompetition,
@@ -218,7 +219,7 @@ export class DataForSeoService {
         include_seed_keyword: true,
         // Keep phrase intact so results stay on-seed (e.g. "running shoes …").
         exact_match: true,
-        filters: ["keyword_info.search_volume", ">", 0],
+        filters: ["keyword_info.search_volume", ">=", MIN_KEYWORD_VOLUME],
         order_by: ["keyword_info.search_volume,desc"],
         limit: 200,
       },
@@ -243,7 +244,7 @@ export class DataForSeoService {
         location_code: this.locationCode(),
         language_code: this.languageCode(),
         closely_variants: true,
-        filters: ["keyword_info.search_volume", ">", 0],
+        filters: ["keyword_info.search_volume", ">=", MIN_KEYWORD_VOLUME],
         order_by: ["relevance,desc"],
         limit: 100,
       },

@@ -71,10 +71,9 @@ GET    /health/ready
 - **Pin / notes / review status** (`watching` | `building` | `passed`) on opportunities
 
 ### Decision support
-- **Demand breakdown** — volume × CPC × competition × buyer-weight drivers
+- **Demand breakdown** — volume × CPC × competition drivers
 - **Build brief** — one-line summary, why it ranks vs niche median, suggested next step
-- **Pass/fail rubric** — editable thresholds + preferred buyers; badge on tables
-- **Buyer weights** — per-niche overrides of sales-strength weighting (triggers re-score)
+- **Pass/fail rubric** — editable thresholds (floor, volume, pain, competition, trend)
 
 ## Tests
 

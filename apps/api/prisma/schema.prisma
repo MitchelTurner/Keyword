@@ -28,7 +28,7 @@ model Niche {
   opportunities Opportunity[]
   convRate      Float          @default(0.015)
   ltvCacRatio   Float          @default(3.0)
-  /// Optional per-niche overrides of BUYER_TYPE_WEIGHTS
+  /// Legacy field (unused) — demand score no longer uses buyer weights
   buyerWeights  Json?
   /// Optional pass/fail rubric thresholds for decision support
   rubricConfig  Json?

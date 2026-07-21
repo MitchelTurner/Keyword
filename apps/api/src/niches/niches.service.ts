@@ -4,11 +4,15 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import {
+  analyzeOpportunityTrend,
   estimateRunCost,
   type CreateNicheDto,
+  type TrendAnalysis,
+  type TrendPoint,
   type UpdateNicheAssumptionsDto,
   type UpdateOpportunityDto,
 } from "@prospector/shared";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { PipelineService } from "../pipeline/pipeline.service";
 import { CostService } from "../cost/cost.service";
@@ -18,6 +22,11 @@ function csvEscape(value: string | number | null | undefined): string {
   const s = String(value);
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
+}
+
+function asTrendPoints(raw: Prisma.JsonValue | null): TrendPoint[] | null {
+  if (!raw || !Array.isArray(raw)) return null;
+  return raw as TrendPoint[];
 }
 
 @Injectable()
@@ -71,27 +80,39 @@ export class NichesService {
     };
   }
 
-  private mapOpportunity(o: {
-    id: string;
-    productDescription: string;
-    buyerType: string;
-    intent: string;
-    painSeverity: number;
-    reasoning: string;
-    totalVolume: number;
-    avgCpc: number;
-    avgCompetition: number;
-    impliedCac: number;
-    annualPriceFloor: number;
-    monthlyPriceFloor: number;
-    demandScore: number;
-    pinned: boolean;
-    notes: string;
-    reviewStatus: string;
-    createdAt: Date;
-    _count?: { keywords: number };
-    keywordCount?: number;
-  }) {
+  private mapOpportunity(
+    o: {
+      id: string;
+      productDescription: string;
+      buyerType: string;
+      intent: string;
+      painSeverity: number;
+      reasoning: string;
+      totalVolume: number;
+      avgCpc: number;
+      avgCompetition: number;
+      impliedCac: number;
+      annualPriceFloor: number;
+      monthlyPriceFloor: number;
+      demandScore: number;
+      pinned: boolean;
+      notes: string;
+      reviewStatus: string;
+      createdAt: Date;
+      _count?: { keywords: number };
+      keywordCount?: number;
+    },
+    trend?: TrendAnalysis,
+  ) {
+    const t =
+      trend ??
+      ({
+        direction: "unknown",
+        score: 0,
+        changePct: null,
+        series: [],
+      } satisfies TrendAnalysis);
+
     return {
       id: o.id,
       productDescription: o.productDescription,
@@ -111,7 +132,21 @@ export class NichesService {
       reviewStatus: o.reviewStatus,
       keywordCount: o.keywordCount ?? o._count?.keywords ?? 0,
       createdAt: o.createdAt,
+      trend: {
+        direction: t.direction,
+        score: t.score,
+        changePct: t.changePct,
+        series: t.series,
+      },
     };
+  }
+
+  private trendFromKeywords(
+    keywords: Array<{ monthlyTrend: Prisma.JsonValue | null }>,
+  ): TrendAnalysis {
+    return analyzeOpportunityTrend(
+      keywords.map((k) => asTrendPoints(k.monthlyTrend)),
+    );
   }
 
   async get(id: string) {
@@ -122,6 +157,7 @@ export class NichesService {
           orderBy: [{ pinned: "desc" }, { demandScore: "desc" }],
           include: {
             _count: { select: { keywords: true } },
+            keywords: { select: { monthlyTrend: true } },
           },
         },
         _count: { select: { keywords: true } },
@@ -129,10 +165,21 @@ export class NichesService {
     });
     if (!niche) throw new NotFoundException("Niche not found");
 
-    const costs = await this.cost.totalsByNiche(id);
-    const enrichedCount = await this.prisma.keyword.count({
-      where: { nicheId: id, searchVolume: { not: null } },
-    });
+    const [costs, enrichedCount] = await Promise.all([
+      this.cost.totalsByNiche(id),
+      this.prisma.keyword.count({
+        where: { nicheId: id, searchVolume: { not: null } },
+      }),
+    ]);
+
+    const opportunities = niche.opportunities.map((o) =>
+      this.mapOpportunity(
+        { ...o, keywordCount: o._count.keywords },
+        this.trendFromKeywords(o.keywords),
+      ),
+    );
+
+    const oppCount = opportunities.length || 1;
 
     return {
       id: niche.id,
@@ -145,8 +192,13 @@ export class NichesService {
       enrichedKeywordCount: enrichedCount,
       createdAt: niche.createdAt,
       updatedAt: niche.updatedAt,
-      costs,
-      opportunities: niche.opportunities.map((o) => this.mapOpportunity(o)),
+      costs: {
+        ...costs,
+        perOpportunity: costs.total / oppCount,
+        perEnrichedKeyword:
+          enrichedCount > 0 ? costs.total / enrichedCount : 0,
+      },
+      opportunities,
     };
   }
 
@@ -161,11 +213,16 @@ export class NichesService {
     });
     if (!opportunity) throw new NotFoundException("Opportunity not found");
 
+    const trend = this.trendFromKeywords(opportunity.keywords);
+
     return {
-      ...this.mapOpportunity({
-        ...opportunity,
-        keywordCount: opportunity.keywords.length,
-      }),
+      ...this.mapOpportunity(
+        {
+          ...opportunity,
+          keywordCount: opportunity.keywords.length,
+        },
+        trend,
+      ),
       nicheId: opportunity.nicheId,
       keywords: opportunity.keywords.map((k) => ({
         id: k.id,
@@ -174,6 +231,36 @@ export class NichesService {
         cpc: k.cpc,
         competition: k.competition,
         monthlyTrend: k.monthlyTrend,
+      })),
+    };
+  }
+
+  async portfolio() {
+    const rows = await this.prisma.opportunity.findMany({
+      where: {
+        OR: [
+          { pinned: true },
+          { reviewStatus: { in: ["watching", "building"] } },
+        ],
+      },
+      orderBy: [{ pinned: "desc" }, { demandScore: "desc" }],
+      include: {
+        niche: { select: { id: true, seedTerm: true, status: true } },
+        _count: { select: { keywords: true } },
+        keywords: { select: { monthlyTrend: true } },
+      },
+    });
+
+    return {
+      count: rows.length,
+      items: rows.map((o) => ({
+        ...this.mapOpportunity(
+          { ...o, keywordCount: o._count.keywords },
+          this.trendFromKeywords(o.keywords),
+        ),
+        nicheId: o.niche.id,
+        nicheSeedTerm: o.niche.seedTerm,
+        nicheStatus: o.niche.status,
       })),
     };
   }
@@ -195,10 +282,16 @@ export class NichesService {
         notes: dto.notes ?? undefined,
         reviewStatus: dto.reviewStatus ?? undefined,
       },
-      include: { _count: { select: { keywords: true } } },
+      include: {
+        _count: { select: { keywords: true } },
+        keywords: { select: { monthlyTrend: true } },
+      },
     });
 
-    return this.mapOpportunity(updated);
+    return this.mapOpportunity(
+      updated,
+      this.trendFromKeywords(updated.keywords),
+    );
   }
 
   async updateAssumptions(id: string, dto: UpdateNicheAssumptionsDto) {
@@ -280,6 +373,8 @@ export class NichesService {
       "implied_cac",
       "monthly_price_floor",
       "demand_score",
+      "trend_direction",
+      "trend_change_pct",
       "reasoning",
       "keyword",
       "keyword_volume",
@@ -289,6 +384,7 @@ export class NichesService {
 
     const lines = [header];
     for (const opp of opportunities) {
+      const trend = this.trendFromKeywords(opp.keywords);
       const base = [
         csvEscape(niche.seedTerm),
         csvEscape(opp.id),
@@ -305,6 +401,8 @@ export class NichesService {
         csvEscape(opp.impliedCac),
         csvEscape(opp.monthlyPriceFloor),
         csvEscape(opp.demandScore),
+        csvEscape(trend.direction),
+        csvEscape(trend.changePct),
         csvEscape(opp.reasoning),
       ];
 

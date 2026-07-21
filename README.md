@@ -50,6 +50,7 @@ pnpm cli:niche -- --seed "invoice software" --wait
 GET    /niches/cost-estimate
 POST   /niches
 GET    /niches
+GET    /portfolio                         # pinned / watching / building rollup
 GET    /niches/:id
 GET    /niches/:id/export.csv
 GET    /niches/:id/opportunities/:oppId
@@ -59,6 +60,7 @@ POST   /niches/:id/reclassify             # Claude only — uses stored Keyword.
 POST   /niches/:id/retry
 DELETE /niches/:id
 GET    /health
+GET    /health/ready
 ```
 
 ### Operator quick wins

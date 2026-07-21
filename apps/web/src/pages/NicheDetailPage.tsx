@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { priceFloors } from "@prospector/shared";
 import {
   api,
   money,
@@ -10,6 +11,7 @@ import {
 } from "../api";
 import StatusBadge from "../components/StatusBadge";
 import Sparkline from "../components/Sparkline";
+import TrendBadge from "../components/TrendBadge";
 
 type SortKey =
   | "demandScore"
@@ -20,7 +22,8 @@ type SortKey =
   | "painSeverity"
   | "productDescription"
   | "buyerType"
-  | "reviewStatus";
+  | "reviewStatus"
+  | "trendScore";
 
 const IN_FLIGHT = new Set([
   "PENDING",
@@ -79,11 +82,27 @@ export default function NicheDetailPage() {
       .catch((e) => setError(String(e)));
   }, [selectedOppId, id]);
 
+  const liveConv = Number(convRate) || 0.015;
+  const liveLtv = Number(ltvCacRatio) || 3;
+  const assumptionsDirty =
+    !!niche &&
+    (Math.abs(liveConv - niche.convRate) > 1e-9 ||
+      Math.abs(liveLtv - niche.ltvCacRatio) > 1e-9);
+
   const rows = useMemo(() => {
     if (!niche) return [];
-    const sorted = [...niche.opportunities];
-    sorted.sort((a, b) => {
-      // Pinned always float to top unless sorting by pin implicitly via default order
+    const enriched = niche.opportunities.map((o) => {
+      const floors = priceFloors(o.avgCpc, liveConv, liveLtv);
+      return {
+        ...o,
+        impliedCac: floors.impliedCac,
+        annualPriceFloor: floors.annualPriceFloor,
+        monthlyPriceFloor: floors.monthlyPriceFloor,
+        trendScore: o.trend.score,
+      };
+    });
+
+    enriched.sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       const av = a[sortKey];
       const bv = b[sortKey];
@@ -96,8 +115,8 @@ export default function NicheDetailPage() {
       const bn = Number(bv);
       return sortDir === "asc" ? an - bn : bn - an;
     });
-    return sorted;
-  }, [niche, sortKey, sortDir]);
+    return enriched;
+  }, [niche, sortKey, sortDir, liveConv, liveLtv]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -195,16 +214,13 @@ export default function NicheDetailPage() {
             <span>{num(niche.enrichedKeywordCount)} enriched</span>
             <span>
               cost {money(niche.costs.total, 4)}
-              {Object.keys(niche.costs.byProvider).length > 0 && (
-                <span className="text-zinc-600">
-                  {" "}
-                  (
-                  {Object.entries(niche.costs.byProvider)
-                    .map(([p, c]) => `${p} ${money(c, 4)}`)
-                    .join(" · ")}
-                  )
-                </span>
-              )}
+              <span className="text-zinc-600">
+                {" "}
+                · {money(niche.costs.perOpportunity, 4)}/opp
+                {niche.enrichedKeywordCount > 0 && (
+                  <> · {money(niche.costs.perEnrichedKeyword, 4)}/kw</>
+                )}
+              </span>
             </span>
           </div>
           {niche.error && (
@@ -241,40 +257,65 @@ export default function NicheDetailPage() {
 
       <form
         onSubmit={onSaveAssumptions}
-        className="grid gap-3 rounded border border-zinc-800 bg-zinc-900/40 p-4 sm:grid-cols-[1fr_1fr_auto]"
+        className="space-y-3 rounded border border-zinc-800 bg-zinc-900/40 p-4"
       >
-        <label className="block text-xs text-zinc-500">
-          Conversion rate (click → customer)
-          <input
-            type="number"
-            step="0.001"
-            min="0.0001"
-            max="1"
-            value={convRate}
-            onChange={(e) => setConvRate(e.target.value)}
-            className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
-          />
-        </label>
-        <label className="block text-xs text-zinc-500">
-          LTV / CAC ratio
-          <input
-            type="number"
-            step="0.1"
-            min="0.1"
-            value={ltvCacRatio}
-            onChange={(e) => setLtvCacRatio(e.target.value)}
-            className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
-          />
-        </label>
-        <div className="flex items-end">
-          <button
-            type="submit"
-            disabled={saving || IN_FLIGHT.has(niche.status)}
-            className="w-full rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-zinc-950 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save & re-score"}
-          </button>
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <label className="block text-xs text-zinc-500">
+            Conversion rate (click → customer)
+            <input
+              type="number"
+              step="0.001"
+              min="0.0001"
+              max="1"
+              value={convRate}
+              onChange={(e) => setConvRate(e.target.value)}
+              className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+            />
+            <input
+              type="range"
+              min={0.005}
+              max={0.05}
+              step={0.001}
+              value={liveConv}
+              onChange={(e) => setConvRate(e.target.value)}
+              className="mt-2 w-full accent-emerald-500"
+            />
+          </label>
+          <label className="block text-xs text-zinc-500">
+            LTV / CAC ratio
+            <input
+              type="number"
+              step="0.1"
+              min="0.1"
+              value={ltvCacRatio}
+              onChange={(e) => setLtvCacRatio(e.target.value)}
+              className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+            />
+            <input
+              type="range"
+              min={1}
+              max={8}
+              step={0.1}
+              value={liveLtv}
+              onChange={(e) => setLtvCacRatio(e.target.value)}
+              className="mt-2 w-full accent-emerald-500"
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={saving || IN_FLIGHT.has(niche.status)}
+              className="w-full rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-zinc-950 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save & re-score"}
+            </button>
+          </div>
         </div>
+        <p className="text-xs text-zinc-500">
+          {assumptionsDirty
+            ? "Preview: CAC and monthly floors below update live. Save to persist and re-score demand."
+            : "Drag sliders to preview price floors without spending API credits."}
+        </p>
       </form>
 
       {error && (
@@ -284,7 +325,7 @@ export default function NicheDetailPage() {
       )}
 
       <div className="overflow-x-auto rounded border border-zinc-800">
-        <table className="w-full min-w-[1040px] text-left text-sm">
+        <table className="w-full min-w-[1180px] text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase tracking-wide text-zinc-500">
             <tr>
               {(
@@ -292,7 +333,7 @@ export default function NicheDetailPage() {
                   ["productDescription", "Product"],
                   ["buyerType", "Buyer"],
                   ["reviewStatus", "Status"],
-                  ["painSeverity", "Pain"],
+                  ["trendScore", "Trend"],
                   ["totalVolume", "Volume"],
                   ["avgCpc", "Avg CPC"],
                   ["impliedCac", "Implied CAC"],
@@ -331,6 +372,7 @@ export default function NicheDetailPage() {
                 key={row.id}
                 row={row}
                 selected={selectedOppId === row.id}
+                preview={assumptionsDirty}
                 onSelect={() =>
                   setSelectedOppId((cur) => (cur === row.id ? null : row.id))
                 }
@@ -355,10 +397,12 @@ export default function NicheDetailPage() {
 function OpportunityTableRow({
   row,
   selected,
+  preview,
   onSelect,
 }: {
-  row: OpportunityRow;
+  row: OpportunityRow & { trendScore: number };
   selected: boolean;
+  preview: boolean;
   onSelect: () => void;
 }) {
   return (
@@ -384,11 +428,24 @@ function OpportunityTableRow({
       <td className="px-3 py-2 text-zinc-400">
         {row.reviewStatus === "none" ? "—" : row.reviewStatus}
       </td>
-      <td className="px-3 py-2 tabular-nums">{row.painSeverity}</td>
+      <td className="px-3 py-2">
+        <div className="flex flex-col gap-1">
+          <TrendBadge trend={row.trend} />
+          <Sparkline data={row.trend.series} width={72} height={18} />
+        </div>
+      </td>
       <td className="px-3 py-2 tabular-nums">{num(row.totalVolume)}</td>
       <td className="px-3 py-2 tabular-nums">{money(row.avgCpc)}</td>
-      <td className="px-3 py-2 tabular-nums">{money(row.impliedCac)}</td>
-      <td className="px-3 py-2 tabular-nums">{money(row.monthlyPriceFloor)}</td>
+      <td
+        className={`px-3 py-2 tabular-nums ${preview ? "text-amber-200" : ""}`}
+      >
+        {money(row.impliedCac)}
+      </td>
+      <td
+        className={`px-3 py-2 tabular-nums ${preview ? "text-amber-200" : ""}`}
+      >
+        {money(row.monthlyPriceFloor)}
+      </td>
       <td className="px-3 py-2 tabular-nums font-medium text-emerald-300">
         {row.demandScore.toFixed(2)}
       </td>
@@ -447,6 +504,10 @@ function OpportunityDrawer({
           <p className="mt-1 text-sm text-zinc-400">
             {detail.buyerType} · {detail.intent} · pain {detail.painSeverity}/5
           </p>
+          <div className="mt-2 flex items-center gap-3">
+            <TrendBadge trend={detail.trend} />
+            <Sparkline data={detail.trend.series} width={100} />
+          </div>
         </div>
         <button
           type="button"

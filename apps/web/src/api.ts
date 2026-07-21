@@ -43,6 +43,13 @@ export type CostEstimate = {
   note: string;
 };
 
+export type TrendInfo = {
+  direction: "rising" | "flat" | "declining" | "unknown";
+  score: number;
+  changePct: number | null;
+  series: Array<{ year: number; month: number; search_volume: number }>;
+};
+
 export type OpportunityRow = {
   id: string;
   productDescription: string;
@@ -62,6 +69,7 @@ export type OpportunityRow = {
   reviewStatus: string;
   keywordCount: number;
   createdAt: string;
+  trend: TrendInfo;
 };
 
 export type NicheDetail = {
@@ -75,7 +83,12 @@ export type NicheDetail = {
   enrichedKeywordCount: number;
   createdAt: string;
   updatedAt: string;
-  costs: { total: number; byProvider: Record<string, number> };
+  costs: {
+    total: number;
+    byProvider: Record<string, number>;
+    perOpportunity: number;
+    perEnrichedKeyword: number;
+  };
   opportunities: OpportunityRow[];
 };
 
@@ -95,6 +108,12 @@ export type OpportunityDetail = OpportunityRow & {
   }>;
 };
 
+export type PortfolioItem = OpportunityRow & {
+  nicheId: string;
+  nicheSeedTerm: string;
+  nicheStatus: string;
+};
+
 export const api = {
   listNiches: () =>
     request<{
@@ -102,6 +121,8 @@ export const api = {
       costEstimate: CostEstimate;
       niches: NicheListItem[];
     }>("/niches"),
+  portfolio: () =>
+    request<{ count: number; items: PortfolioItem[] }>("/portfolio"),
   costEstimate: () => request<CostEstimate>("/niches/cost-estimate"),
   createNiche: (seedTerm: string) =>
     request<NicheListItem>("/niches", {

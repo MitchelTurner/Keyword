@@ -136,7 +136,7 @@ export default function PortfolioPage() {
                 <td className="px-3 py-2.5">
                   <RubricBadge
                     pass={item.decision.rubric.pass}
-                    score={item.decision.rubric.score}
+                    checks={item.decision.rubric.checks}
                   />
                 </td>
                 <td className="px-3 py-2.5">

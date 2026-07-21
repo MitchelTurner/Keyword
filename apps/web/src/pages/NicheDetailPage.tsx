@@ -936,7 +936,7 @@ function OpportunityTableRow({
       <td className="px-3 py-2.5">
         <RubricBadge
           pass={row.decision.rubric.pass}
-          score={row.decision.rubric.score}
+          checks={row.decision.rubric.checks}
         />
       </td>
       <td className="px-3 py-2.5">
@@ -1047,7 +1047,7 @@ function OpportunityDrawer({
           <div className="flex flex-wrap items-center gap-3">
             <RubricBadge
               pass={decision.rubric.pass}
-              score={decision.rubric.score}
+              checks={decision.rubric.checks}
             />
             <TrendBadge trend={detail.trend} />
             <Sparkline
@@ -1118,7 +1118,7 @@ function OpportunityDrawer({
               </h3>
               <RubricBadge
                 pass={decision.rubric.pass}
-                score={decision.rubric.score}
+                checks={decision.rubric.checks}
               />
             </div>
             <div className="space-y-2 text-sm leading-relaxed text-zinc-300">

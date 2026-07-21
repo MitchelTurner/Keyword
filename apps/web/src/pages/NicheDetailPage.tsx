@@ -278,7 +278,7 @@ export default function NicheDetailPage() {
   async function onReclassify() {
     if (
       !confirm(
-        "Re-classify from stored keyword data? This uses Claude (no DataForSEO re-fetch). Pins/notes are kept when product labels match.",
+        "Re-cluster themes from stored keyword data? This uses Claude (no DataForSEO re-fetch). Pins/notes are kept when theme labels match.",
       )
     ) {
       return;

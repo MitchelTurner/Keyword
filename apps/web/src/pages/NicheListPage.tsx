@@ -1,10 +1,17 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { api, money, type CostEstimate, type NicheListItem } from "../api";
+import { Link, useSearchParams } from "react-router-dom";
+import {
+  api,
+  money,
+  type CostEstimate,
+  type NicheListItem,
+  type RecommendationsResponse,
+} from "../api";
 import StatusBadge from "../components/StatusBadge";
 import PageHeader from "../components/PageHeader";
 import EmptyState from "../components/EmptyState";
 import Panel from "../components/Panel";
+import RecommendationsPanel from "../components/RecommendationsPanel";
 import { relativeTime } from "../lib/format";
 
 const IN_FLIGHT = new Set([
@@ -16,13 +23,24 @@ const IN_FLIGHT = new Set([
 ]);
 
 export default function NicheListPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [seedTerm, setSeedTerm] = useState("");
   const [niches, setNiches] = useState<NicheListItem[]>([]);
   const [globalCost, setGlobalCost] = useState(0);
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
+  const [recs, setRecs] = useState<RecommendationsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fromQuery = searchParams.get("seed");
+    if (!fromQuery) return;
+    setSeedTerm(fromQuery);
+    const next = new URLSearchParams(searchParams);
+    next.delete("seed");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const anyInFlight = useMemo(
     () => niches.some((n) => IN_FLIGHT.has(n.status)),
@@ -35,10 +53,14 @@ export default function NicheListPage() {
   );
 
   async function refresh() {
-    const data = await api.listNiches();
-    setNiches(data.niches);
-    setGlobalCost(data.globalCost);
-    setEstimate(data.costEstimate);
+    const [list, recommendations] = await Promise.all([
+      api.listNiches(),
+      api.recommendations(),
+    ]);
+    setNiches(list.niches);
+    setGlobalCost(list.globalCost);
+    setEstimate(list.costEstimate);
+    setRecs(recommendations);
   }
 
   useEffect(() => {
@@ -142,6 +164,15 @@ export default function NicheListPage() {
         )}
       </Panel>
 
+      {recs && (
+        <RecommendationsPanel
+          niches={recs.niches}
+          keywords={recs.keywords}
+          selectedSeed={seedTerm}
+          onPick={setSeedTerm}
+        />
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
         <div className="flex items-center gap-3">
           <span>
@@ -195,7 +226,7 @@ export default function NicheListPage() {
                 <td colSpan={6}>
                   <EmptyState
                     title="No niches yet"
-                    description="Enter a seed term above to expand keywords and surface product opportunities."
+                    description="Pick a recommended niche above, or enter your own seed term to begin."
                   />
                 </td>
               </tr>

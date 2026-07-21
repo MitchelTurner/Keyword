@@ -166,6 +166,30 @@ export type PortfolioItem = OpportunityRow & {
   nicheStatus: string;
 };
 
+export type RecommendedNiche = {
+  id: string;
+  seed: string;
+  category: string;
+  why: string;
+  keywords: string[];
+  alreadyRun: boolean;
+};
+
+export type RecommendedKeyword = {
+  term: string;
+  source: "curated" | "follow_on";
+  nicheId?: string;
+  nicheSeed?: string;
+  reason?: string;
+  volume?: number | null;
+};
+
+export type RecommendationsResponse = {
+  niches: RecommendedNiche[];
+  keywords: RecommendedKeyword[];
+  followOns: RecommendedKeyword[];
+};
+
 export const api = {
   listNiches: () =>
     request<{
@@ -173,6 +197,7 @@ export const api = {
       costEstimate: CostEstimate;
       niches: NicheListItem[];
     }>("/niches"),
+  recommendations: () => request<RecommendationsResponse>("/recommendations"),
   portfolio: () =>
     request<{ count: number; items: PortfolioItem[] }>("/portfolio"),
   costEstimate: () => request<CostEstimate>("/niches/cost-estimate"),

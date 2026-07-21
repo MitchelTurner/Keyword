@@ -17,6 +17,7 @@ import {
   type OpportunityRow,
   type RubricConfig,
 } from "../api";
+import { CURATED_NICHES } from "@prospector/shared";
 import StatusBadge from "../components/StatusBadge";
 import Sparkline from "../components/Sparkline";
 import TrendBadge from "../components/TrendBadge";
@@ -380,6 +381,8 @@ export default function NicheDetailPage() {
 
       <PipelineProgress status={niche.status} />
 
+      <RelatedSeeds seedTerm={niche.seedTerm} />
+
       <Panel
         title="Economics assumptions"
         hint={
@@ -707,6 +710,47 @@ function MetaStat({
         {label}
       </span>
     </span>
+  );
+}
+
+function RelatedSeeds({ seedTerm }: { seedTerm: string }) {
+  const curated = CURATED_NICHES.find(
+    (n) => n.seed.toLowerCase() === seedTerm.trim().toLowerCase(),
+  );
+  const related = curated?.keywords ?? [];
+  // Fallback: suggest other curated seeds in a similar category when exact match missing
+  const neighbors =
+    related.length > 0
+      ? related
+      : CURATED_NICHES.filter(
+          (n) => n.seed.toLowerCase() !== seedTerm.trim().toLowerCase(),
+        )
+          .slice(0, 6)
+          .map((n) => n.seed);
+
+  if (neighbors.length === 0) return null;
+
+  return (
+    <Panel
+      title="Related seeds to try next"
+      hint={
+        curated
+          ? `Angles adjacent to ${curated.seed}`
+          : "Curated niches worth expanding"
+      }
+    >
+      <div className="flex flex-wrap gap-1.5">
+        {neighbors.map((term) => (
+          <Link
+            key={term}
+            to={`/?seed=${encodeURIComponent(term)}`}
+            className="rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1 text-xs text-zinc-300 transition hover:border-emerald-800 hover:text-emerald-300"
+          >
+            {term}
+          </Link>
+        ))}
+      </div>
+    </Panel>
   );
 }
 

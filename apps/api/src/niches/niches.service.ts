@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 import {
   analyzeOpportunityTrend,
+  buildRecommendations,
   estimateRunCost,
   type CreateNicheDto,
   type TrendAnalysis,
@@ -346,6 +347,42 @@ export class NichesService {
     });
 
     return { count: items.length, items };
+  }
+
+  async recommendations() {
+    const niches = await this.prisma.niche.findMany({
+      select: { id: true, seedTerm: true },
+    });
+    const existingSeeds = niches.map((n) => n.seedTerm);
+    const nicheIds = niches.map((n) => n.id);
+
+    const topKeywords =
+      nicheIds.length === 0
+        ? []
+        : await this.prisma.keyword.findMany({
+            where: {
+              nicheId: { in: nicheIds },
+              searchVolume: { not: null, gt: 0 },
+            },
+            orderBy: { searchVolume: "desc" },
+            take: 120,
+            select: {
+              term: true,
+              searchVolume: true,
+              nicheId: true,
+              niche: { select: { seedTerm: true } },
+            },
+          });
+
+    return buildRecommendations({
+      existingSeeds,
+      followOnCandidates: topKeywords.map((k) => ({
+        term: k.term,
+        nicheId: k.nicheId,
+        nicheSeed: k.niche.seedTerm,
+        volume: k.searchVolume,
+      })),
+    });
   }
 
   async updateOpportunity(

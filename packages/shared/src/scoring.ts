@@ -51,6 +51,7 @@ export function scoreOpportunity(
   keywords: KeywordMetrics[],
   assumptions: ScoringAssumptions,
   buyerType: BuyerType,
+  buyerWeights?: Partial<Record<BuyerType, number>> | null,
 ): ScoredOpportunity {
   const enriched = keywords.filter(
     (k) => k.searchVolume != null && k.searchVolume > 0,
@@ -76,7 +77,8 @@ export function scoreOpportunity(
   const annualPriceFloor = impliedCac / ltvCacRatio;
   const monthlyPriceFloor = annualPriceFloor / 12;
 
-  const weight = BUYER_TYPE_WEIGHTS[buyerType] ?? 1.0;
+  const weights = { ...BUYER_TYPE_WEIGHTS, ...(buyerWeights ?? {}) };
+  const weight = weights[buyerType] ?? 1.0;
   const demandScore =
     Math.log10(totalVolume + 1) * avgCpc * (1 + avgCompetition) * weight;
 

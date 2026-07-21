@@ -50,6 +50,33 @@ export type TrendInfo = {
   series: Array<{ year: number; month: number; search_volume: number }>;
 };
 
+export type DecisionSupport = {
+  rank: number;
+  breakdown: {
+    volumeFactor: number;
+    cpcFactor: number;
+    competitionFactor: number;
+    buyerWeight: number;
+    demandScore: number;
+    drivers: string[];
+  };
+  rubric: {
+    pass: boolean;
+    score: number;
+    checks: Array<{
+      id: string;
+      label: string;
+      pass: boolean;
+      detail: string;
+    }>;
+  };
+  brief: {
+    summary: string;
+    whyRanks: string;
+    nextStep: string;
+  };
+};
+
 export type OpportunityRow = {
   id: string;
   productDescription: string;
@@ -70,7 +97,19 @@ export type OpportunityRow = {
   keywordCount: number;
   createdAt: string;
   trend: TrendInfo;
+  decision: DecisionSupport;
 };
+
+export type RubricConfig = {
+  minMonthlyFloor: number;
+  minVolume: number;
+  minPain: number;
+  maxCompetition: number;
+  preferredBuyers: string[];
+  rejectDeclining: boolean;
+};
+
+export type BuyerWeights = Record<string, number>;
 
 export type NicheDetail = {
   id: string;
@@ -79,6 +118,8 @@ export type NicheDetail = {
   error: string | null;
   convRate: number;
   ltvCacRatio: number;
+  buyerWeights: BuyerWeights;
+  rubricConfig: RubricConfig;
   keywordCount: number;
   enrichedKeywordCount: number;
   createdAt: string;
@@ -88,6 +129,10 @@ export type NicheDetail = {
     byProvider: Record<string, number>;
     perOpportunity: number;
     perEnrichedKeyword: number;
+  };
+  decisionSummary: {
+    passCount: number;
+    failCount: number;
   };
   opportunities: OpportunityRow[];
 };
@@ -143,7 +188,13 @@ export const api = {
     }),
   updateAssumptions: (
     id: string,
-    body: { convRate?: number; ltvCacRatio?: number },
+    body: {
+      convRate?: number;
+      ltvCacRatio?: number;
+      buyerWeights?: BuyerWeights;
+      rubricConfig?: RubricConfig;
+      rescore?: boolean;
+    },
   ) =>
     request(`/niches/${id}`, {
       method: "PATCH",

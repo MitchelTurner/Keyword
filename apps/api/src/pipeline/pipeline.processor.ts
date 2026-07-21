@@ -437,11 +437,17 @@ export class PipelineProcessor {
       },
     });
 
+    const buyerWeights =
+      niche.buyerWeights && typeof niche.buyerWeights === "object"
+        ? (niche.buyerWeights as Partial<Record<BuyerType, number>>)
+        : null;
+
     for (const opp of opportunities) {
       const scored = scoreOpportunity(
         opp.keywords,
         { convRate: niche.convRate, ltvCacRatio: niche.ltvCacRatio },
         opp.buyerType as BuyerType,
+        buyerWeights,
       );
 
       await this.prisma.opportunity.update({

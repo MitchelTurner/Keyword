@@ -16,6 +16,14 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { PipelineService } from "../pipeline/pipeline.service";
 import { CostService } from "../cost/cost.service";
+import {
+  BUYER_TYPE_WEIGHTS,
+  DEFAULT_RUBRIC,
+  attachDecisionSupport,
+  mergeBuyerWeights,
+  parseBuyerWeights,
+  parseRubricConfig,
+} from "./decision";
 
 function csvEscape(value: string | number | null | undefined): string {
   if (value == null) return "";
@@ -28,6 +36,13 @@ function asTrendPoints(raw: Prisma.JsonValue | null): TrendPoint[] | null {
   if (!raw || !Array.isArray(raw)) return null;
   return raw as TrendPoint[];
 }
+
+const IN_FLIGHT_STATUSES = new Set([
+  "EXPANDING",
+  "ENRICHING",
+  "CLASSIFYING",
+  "SCORING",
+]);
 
 @Injectable()
 export class NichesService {
@@ -172,14 +187,22 @@ export class NichesService {
       }),
     ]);
 
-    const opportunities = niche.opportunities.map((o) =>
+    const buyerWeights = parseBuyerWeights(niche.buyerWeights);
+    const rubricConfig = parseRubricConfig(niche.rubricConfig);
+
+    const mapped = niche.opportunities.map((o) =>
       this.mapOpportunity(
         { ...o, keywordCount: o._count.keywords },
         this.trendFromKeywords(o.keywords),
       ),
     );
+    const opportunities = attachDecisionSupport(mapped, {
+      buyerWeights,
+      rubricConfig,
+    });
 
     const oppCount = opportunities.length || 1;
+    const passCount = opportunities.filter((o) => o.decision.rubric.pass).length;
 
     return {
       id: niche.id,
@@ -188,6 +211,8 @@ export class NichesService {
       error: niche.error,
       convRate: niche.convRate,
       ltvCacRatio: niche.ltvCacRatio,
+      buyerWeights: mergeBuyerWeights(buyerWeights),
+      rubricConfig,
       keywordCount: niche._count.keywords,
       enrichedKeywordCount: enrichedCount,
       createdAt: niche.createdAt,
@@ -198,11 +223,42 @@ export class NichesService {
         perEnrichedKeyword:
           enrichedCount > 0 ? costs.total / enrichedCount : 0,
       },
+      decisionSummary: {
+        passCount,
+        failCount: opportunities.length - passCount,
+        defaults: {
+          buyerWeights: BUYER_TYPE_WEIGHTS,
+          rubricConfig: DEFAULT_RUBRIC,
+        },
+      },
       opportunities,
     };
   }
 
   async getOpportunity(nicheId: string, oppId: string) {
+    const niche = await this.prisma.niche.findUnique({ where: { id: nicheId } });
+    if (!niche) throw new NotFoundException("Niche not found");
+
+    const siblings = await this.prisma.opportunity.findMany({
+      where: { nicheId },
+      include: {
+        keywords: { select: { monthlyTrend: true } },
+        _count: { select: { keywords: true } },
+      },
+    });
+
+    const buyerWeights = parseBuyerWeights(niche.buyerWeights);
+    const rubricConfig = parseRubricConfig(niche.rubricConfig);
+    const withDecision = attachDecisionSupport(
+      siblings.map((o) =>
+        this.mapOpportunity(
+          { ...o, keywordCount: o._count.keywords },
+          this.trendFromKeywords(o.keywords),
+        ),
+      ),
+      { buyerWeights, rubricConfig },
+    );
+
     const opportunity = await this.prisma.opportunity.findFirst({
       where: { id: oppId, nicheId },
       include: {
@@ -213,16 +269,11 @@ export class NichesService {
     });
     if (!opportunity) throw new NotFoundException("Opportunity not found");
 
-    const trend = this.trendFromKeywords(opportunity.keywords);
+    const decided = withDecision.find((o) => o.id === oppId);
+    if (!decided) throw new NotFoundException("Opportunity not found");
 
     return {
-      ...this.mapOpportunity(
-        {
-          ...opportunity,
-          keywordCount: opportunity.keywords.length,
-        },
-        trend,
-      ),
+      ...decided,
       nicheId: opportunity.nicheId,
       keywords: opportunity.keywords.map((k) => ({
         id: k.id,
@@ -245,24 +296,56 @@ export class NichesService {
       },
       orderBy: [{ pinned: "desc" }, { demandScore: "desc" }],
       include: {
-        niche: { select: { id: true, seedTerm: true, status: true } },
+        niche: {
+          select: {
+            id: true,
+            seedTerm: true,
+            status: true,
+            buyerWeights: true,
+            rubricConfig: true,
+          },
+        },
         _count: { select: { keywords: true } },
         keywords: { select: { monthlyTrend: true } },
       },
     });
 
-    return {
-      count: rows.length,
-      items: rows.map((o) => ({
-        ...this.mapOpportunity(
-          { ...o, keywordCount: o._count.keywords },
-          this.trendFromKeywords(o.keywords),
+    // Decision support is per-niche (weights/rubric), so group then flatten.
+    const byNiche = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const list = byNiche.get(row.nicheId) ?? [];
+      list.push(row);
+      byNiche.set(row.nicheId, list);
+    }
+
+    const items = [...byNiche.values()].flatMap((group) => {
+      const niche = group[0]!.niche;
+      const decided = attachDecisionSupport(
+        group.map((o) =>
+          this.mapOpportunity(
+            { ...o, keywordCount: o._count.keywords },
+            this.trendFromKeywords(o.keywords),
+          ),
         ),
-        nicheId: o.niche.id,
-        nicheSeedTerm: o.niche.seedTerm,
-        nicheStatus: o.niche.status,
-      })),
-    };
+        {
+          buyerWeights: parseBuyerWeights(niche.buyerWeights),
+          rubricConfig: parseRubricConfig(niche.rubricConfig),
+        },
+      );
+      return decided.map((o) => ({
+        ...o,
+        nicheId: niche.id,
+        nicheSeedTerm: niche.seedTerm,
+        nicheStatus: niche.status,
+      }));
+    });
+
+    items.sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return b.demandScore - a.demandScore;
+    });
+
+    return { count: items.length, items };
   }
 
   async updateOpportunity(
@@ -298,23 +381,62 @@ export class NichesService {
     const niche = await this.prisma.niche.findUnique({ where: { id } });
     if (!niche) throw new NotFoundException("Niche not found");
 
-    if (niche.status !== "DONE" && niche.status !== "FAILED") {
+    const touchesScoring =
+      dto.convRate !== undefined ||
+      dto.ltvCacRatio !== undefined ||
+      dto.buyerWeights !== undefined;
+    const shouldRescore = dto.rescore ?? touchesScoring;
+
+    if (shouldRescore && niche.status !== "DONE" && niche.status !== "FAILED") {
       throw new BadRequestException(
         "Assumptions can only be edited when niche is DONE or FAILED",
       );
     }
+
+    if (!shouldRescore && niche.status !== "DONE" && niche.status !== "FAILED") {
+      // Allow rubric-only edits anytime except mid-flight.
+      if (
+        niche.status !== "PENDING" &&
+        IN_FLIGHT_STATUSES.has(niche.status)
+      ) {
+        throw new BadRequestException(
+          "Wait for the pipeline to finish before editing decision config",
+        );
+      }
+    }
+
+    const nextWeights = dto.buyerWeights
+      ? mergeBuyerWeights({
+          ...parseBuyerWeights(niche.buyerWeights),
+          ...dto.buyerWeights,
+        })
+      : undefined;
+    const nextRubric = dto.rubricConfig
+      ? { ...parseRubricConfig(niche.rubricConfig), ...dto.rubricConfig }
+      : undefined;
 
     const updated = await this.prisma.niche.update({
       where: { id },
       data: {
         convRate: dto.convRate ?? niche.convRate,
         ltvCacRatio: dto.ltvCacRatio ?? niche.ltvCacRatio,
-        status: "SCORING",
-        error: null,
+        buyerWeights:
+          nextWeights === undefined
+            ? undefined
+            : (nextWeights as Prisma.InputJsonValue),
+        rubricConfig:
+          nextRubric === undefined
+            ? undefined
+            : (nextRubric as Prisma.InputJsonValue),
+        ...(shouldRescore
+          ? { status: "SCORING" as const, error: null }
+          : {}),
       },
     });
 
-    await this.pipeline.enqueueScore(id);
+    if (shouldRescore) {
+      await this.pipeline.enqueueScore(id);
+    }
     return updated;
   }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   SearchVolumeItemSchema,
   KeywordIdeaItemSchema,
+  filterRelevantKeywords,
   normalizeCompetition,
 } from "@prospector/shared";
 import keywordIdeasFixture from "../../test/fixtures/keyword-ideas.json";
@@ -9,13 +10,24 @@ import searchVolumeFixture from "../../test/fixtures/search-volume.json";
 import { extractSearchVolumeItems } from "./dataforseo.service";
 
 describe("DataForSEO response parsing", () => {
-  it("extracts keywords from keyword_ideas fixture", () => {
+  it("extracts keywords from labs fixture items", () => {
     const items = keywordIdeasFixture.tasks[0].result[0].items;
     const terms = items
       .map((item) => KeywordIdeaItemSchema.parse(item).keyword)
       .filter(Boolean);
     expect(terms).toContain("invoice software");
     expect(terms.length).toBeGreaterThan(3);
+  });
+
+  it("filters category-adjacent junk from keyword_ideas-style lists", () => {
+    const items = keywordIdeasFixture.tasks[0].result[0].items.map(
+      (i) => i.keyword,
+    );
+    const kept = filterRelevantKeywords(items, "invoice software", 50);
+    expect(kept).toContain("invoice software");
+    expect(kept).toContain("invoice ocr software");
+    expect(kept).not.toContain("accounts payable automation");
+    expect(kept).not.toContain("free invoice app");
   });
 
   it("reads Google Ads search_volume as a flat result array", () => {

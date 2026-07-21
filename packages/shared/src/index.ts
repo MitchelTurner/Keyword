@@ -5,3 +5,4 @@ export * from "./trend";
 export * from "./economics";
 export * from "./decision";
 export * from "./recommendations";
+export * from "./keyword-relevance";

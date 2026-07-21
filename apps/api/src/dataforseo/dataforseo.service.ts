@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import {
   KeywordIdeaItemSchema,
   SearchVolumeItemSchema,
+  filterRelevantKeywords,
   normalizeCompetition,
   type SearchVolumeItem,
 } from "@prospector/shared";
@@ -160,13 +161,91 @@ export class DataForSeoService {
       : new Error(String(lastError));
   }
 
+  /**
+   * Expand a seed into relevant keywords.
+   * Prefer Keyword Suggestions (must contain the seed phrase) over Keyword Ideas
+   * (same Ads category — often off-topic junk).
+   */
   async expandKeywords(seedTerm: string, nicheId?: string): Promise<string[]> {
+    const seed = seedTerm.trim();
+    const suggested = await this.fetchKeywordSuggestions(seed, nicheId);
+
+    let pool = suggested;
+    if (pool.length < 20) {
+      // Small fallback for thin seeds — still relevance-filtered afterward.
+      const ideas = await this.fetchKeywordIdeas(seed, nicheId).catch((err) => {
+        this.logger.warn(
+          `keyword_ideas fallback failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return [] as string[];
+      });
+      pool = [...pool, ...ideas];
+    }
+
+    const relevant = filterRelevantKeywords(pool, seed, 200);
+    this.logger.log(
+      JSON.stringify({
+        event: "expand_keywords",
+        nicheId,
+        seed,
+        suggested: suggested.length,
+        kept: relevant.length,
+      }),
+    );
+    return relevant;
+  }
+
+  private extractLabKeywords(items: unknown[]): string[] {
+    const terms: string[] = [];
+    for (const raw of items) {
+      const parsed = KeywordIdeaItemSchema.safeParse(raw);
+      if (parsed.success && parsed.data.keyword.trim()) {
+        terms.push(parsed.data.keyword.trim());
+      }
+    }
+    return terms;
+  }
+
+  private async fetchKeywordSuggestions(
+    seed: string,
+    nicheId?: string,
+  ): Promise<string[]> {
     const payload = [
       {
-        keywords: [seedTerm],
+        keyword: seed,
         location_code: this.locationCode(),
         language_code: this.languageCode(),
-        limit: 500,
+        include_seed_keyword: true,
+        // Keep phrase intact so results stay on-seed (e.g. "running shoes …").
+        exact_match: true,
+        filters: ["keyword_info.search_volume", ">", 0],
+        order_by: ["keyword_info.search_volume,desc"],
+        limit: 200,
+      },
+    ];
+
+    const json = await this.request<{
+      tasks: Array<{
+        result?: Array<{ items?: unknown[] } | null> | null;
+      }>;
+    }>("/dataforseo_labs/google/keyword_suggestions/live", payload, nicheId);
+
+    return this.extractLabKeywords(json.tasks?.[0]?.result?.[0]?.items ?? []);
+  }
+
+  private async fetchKeywordIdeas(
+    seed: string,
+    nicheId?: string,
+  ): Promise<string[]> {
+    const payload = [
+      {
+        keywords: [seed],
+        location_code: this.locationCode(),
+        language_code: this.languageCode(),
+        closely_variants: true,
+        filters: ["keyword_info.search_volume", ">", 0],
+        order_by: ["relevance,desc"],
+        limit: 100,
       },
     ];
 
@@ -176,15 +255,7 @@ export class DataForSeoService {
       }>;
     }>("/dataforseo_labs/google/keyword_ideas/live", payload, nicheId);
 
-    const items = json.tasks?.[0]?.result?.[0]?.items ?? [];
-    const terms: string[] = [];
-    for (const raw of items) {
-      const parsed = KeywordIdeaItemSchema.safeParse(raw);
-      if (parsed.success && parsed.data.keyword.trim()) {
-        terms.push(parsed.data.keyword.trim());
-      }
-    }
-    return terms;
+    return this.extractLabKeywords(json.tasks?.[0]?.result?.[0]?.items ?? []);
   }
 
   async enrichKeywords(

@@ -28,7 +28,7 @@ function useCyclePage(itemCount: number, pageSize: number, resetKey: string) {
 }
 
 export default function RecommendationsPanel({
-  niches,
+  niches: _niches,
   keywords,
   selectedSeed,
   onPick,
@@ -46,26 +46,19 @@ export default function RecommendationsPanel({
     const selected = selectedSeed.trim().toLowerCase();
     return keywords.filter(
       (k) =>
-        (k.source === "api" || k.source === "follow_on") &&
-        k.term.trim().toLowerCase() !== selected,
+        k.source === "api" &&
+        k.term.trim().toLowerCase() !== selected &&
+        k.competition != null &&
+        k.competition <= 0.35,
     );
   }, [keywords, selectedSeed]);
 
-  const starterNiches = useMemo(
-    () => niches.filter((n) => !n.alreadyRun),
-    [niches],
-  );
-
-  const usingApi = apiSeeds.length > 0;
-  const items = usingApi ? apiSeeds : starterNiches;
   const cycle = useCyclePage(
-    items.length,
+    apiSeeds.length,
     PAGE_SIZE,
-    usingApi
-      ? apiSeeds.map((k) => k.term).join("|")
-      : starterNiches.map((n) => n.id).join("|"),
+    apiSeeds.map((k) => k.term).join("|"),
   );
-  const pageItems = items.slice(cycle.start, cycle.start + PAGE_SIZE);
+  const pageItems = apiSeeds.slice(cycle.start, cycle.start + PAGE_SIZE);
 
   const searchButton = onSearchNew ? (
     <button
@@ -79,7 +72,7 @@ export default function RecommendationsPanel({
     </button>
   ) : null;
 
-  if (items.length === 0) {
+  if (apiSeeds.length === 0) {
     return (
       <Panel
         title="Recommended seeds"
@@ -87,8 +80,8 @@ export default function RecommendationsPanel({
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-zinc-500">
-            No live suggestions yet. Search the API for high-volume, low-competition
-            niche seeds across diverse topics.
+            No low-competition seeds yet. Search the API for high-volume niches
+            with competition at or below 35%.
           </p>
           {searchButton}
         </div>
@@ -97,40 +90,30 @@ export default function RecommendationsPanel({
   }
 
   function pickNext() {
-    if (usingApi) {
-      if (apiSeeds.length === 0) return;
-      const selected = selectedSeed.trim().toLowerCase();
-      const idx = apiSeeds.findIndex(
-        (k) => k.term.trim().toLowerCase() === selected,
-      );
-      const next = apiSeeds[(idx + 1) % apiSeeds.length]!;
-      onPick(next.term);
-      const openIdx = apiSeeds.findIndex(
-        (k) => k.term.trim().toLowerCase() === next.term.trim().toLowerCase(),
-      );
-      if (openIdx >= 0) cycle.setPage(Math.floor(openIdx / PAGE_SIZE));
-      return;
-    }
-    if (starterNiches.length === 0) return;
-    const next = starterNiches[(cycle.start + 1) % starterNiches.length]!;
-    onPick(next.seed);
+    if (apiSeeds.length === 0) return;
+    const selected = selectedSeed.trim().toLowerCase();
+    const idx = apiSeeds.findIndex(
+      (k) => k.term.trim().toLowerCase() === selected,
+    );
+    const next = apiSeeds[(idx + 1) % apiSeeds.length]!;
+    onPick(next.term);
+    const openIdx = apiSeeds.findIndex(
+      (k) => k.term.trim().toLowerCase() === next.term.trim().toLowerCase(),
+    );
+    if (openIdx >= 0) cycle.setPage(Math.floor(openIdx / PAGE_SIZE));
   }
 
   return (
     <Panel
       title="Recommended seeds"
-      hint={
-        usingApi
-          ? `${apiSeeds.length} niches from live API · high volume, low competition, wide topic mix`
-          : "Starter ideas (live API unavailable)"
-      }
+      hint={`${apiSeeds.length} niches from live API · volume ≥ 500 · competition ≤ 35%`}
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-          {usingApi ? "Suggested niches" : "Starter niches"}
+          Suggested niches
           <span className="ml-2 normal-case tracking-normal text-zinc-600">
             {cycle.pageCount > 1 ? `${cycle.page + 1}/${cycle.pageCount} · ` : ""}
-            {items.length}
+            {apiSeeds.length}
           </span>
         </p>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -164,64 +147,40 @@ export default function RecommendationsPanel({
       </div>
 
       <ul className="divide-y divide-zinc-800/80 border-y border-zinc-800/80">
-        {usingApi
-          ? (pageItems as RecommendedKeyword[]).map((k) => (
-              <li key={k.term}>
-                <button
-                  type="button"
-                  onClick={() => onPick(k.term)}
-                  title={k.reason ?? k.term}
-                  className={`flex w-full flex-col gap-0.5 px-1 py-2.5 text-left transition hover:bg-zinc-900/70 ${
-                    selectedSeed === k.term ? "bg-emerald-950/25" : ""
-                  }`}
-                >
-                  <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span className="text-sm font-medium text-emerald-300">
-                      {k.term}
-                    </span>
-                    {k.category && (
-                      <span className="text-[11px] uppercase tracking-wide text-zinc-600">
-                        {k.category}
-                      </span>
-                    )}
+        {pageItems.map((k) => (
+          <li key={k.term}>
+            <button
+              type="button"
+              onClick={() => onPick(k.term)}
+              title={k.reason ?? k.term}
+              className={`flex w-full flex-col gap-0.5 px-1 py-2.5 text-left transition hover:bg-zinc-900/70 ${
+                selectedSeed === k.term ? "bg-emerald-950/25" : ""
+              }`}
+            >
+              <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className="text-sm font-medium text-emerald-300">
+                  {k.term}
+                </span>
+                {k.category && (
+                  <span className="text-[11px] uppercase tracking-wide text-zinc-600">
+                    {k.category}
                   </span>
-                  <span className="text-xs text-zinc-500">
-                    <span className="tabular-nums text-zinc-400">
-                      {k.volume != null ? num(k.volume) : "—"}/mo
-                    </span>
-                    <span className="mx-1.5 text-zinc-700">·</span>
-                    <span className="tabular-nums text-zinc-400">
-                      {k.competition != null
-                        ? `${Math.round(k.competition * 100)}% comp`
-                        : "comp n/a"}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            ))
-          : (pageItems as RecommendedNiche[]).map((n) => (
-              <li key={n.id}>
-                <button
-                  type="button"
-                  onClick={() => onPick(n.seed)}
-                  className={`flex w-full flex-col gap-0.5 px-1 py-2.5 text-left transition hover:bg-zinc-900/70 ${
-                    selectedSeed === n.seed ? "bg-emerald-950/25" : ""
-                  }`}
-                >
-                  <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span className="text-sm font-medium text-emerald-300">
-                      {n.seed}
-                    </span>
-                    <span className="text-[11px] uppercase tracking-wide text-zinc-600">
-                      {n.category}
-                    </span>
-                  </span>
-                  <span className="text-xs leading-relaxed text-zinc-500">
-                    {n.why}
-                  </span>
-                </button>
-              </li>
-            ))}
+                )}
+              </span>
+              <span className="text-xs text-zinc-500">
+                <span className="tabular-nums text-zinc-400">
+                  {k.volume != null ? num(k.volume) : "—"}/mo
+                </span>
+                <span className="mx-1.5 text-zinc-700">·</span>
+                <span className="tabular-nums text-zinc-400">
+                  {k.competition != null
+                    ? `${Math.round(k.competition * 100)}% comp`
+                    : "comp n/a"}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
       </ul>
     </Panel>
   );

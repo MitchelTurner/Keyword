@@ -1,3 +1,5 @@
+import { isBucketCompetition } from "./schemas";
+
 export type CuratedNiche = {
   id: string;
   seed: string;
@@ -221,7 +223,16 @@ export const MAX_RECOMMENDED_COMPETITION = 0.75;
 
 /** Live recommended-seed thresholds. */
 export const RECOMMENDED_SEED_MIN_VOLUME = 500;
-export const RECOMMENDED_SEED_MAX_COMPETITION = 0.45;
+/** Ads competition_index / 100 — keep only clearly low-comp niches. */
+export const RECOMMENDED_SEED_MAX_COMPETITION = 0.35;
+
+/** Head terms used as discovery probes — usually crowded; never recommend these. */
+export function blockedProbeSeeds(): Set<string> {
+  return new Set([
+    ...TOPIC_PROBES.map((p) => normalizeTerm(p.seed)),
+    ...CURATED_NICHES.map((n) => normalizeTerm(n.seed)),
+  ]);
+}
 
 function normalizeTerm(term: string): string {
   return term.trim().toLowerCase().replace(/\s+/g, " ");
@@ -305,14 +316,23 @@ export function diversifyApiSeedRecommendations(
     Array<ApiSeedCandidate & { score: number }>
   >();
 
+  const blocked = blockedProbeSeeds();
+
   for (const c of candidates) {
     if (!isSeedablePhrase(c.term)) continue;
     const key = normalizeTerm(c.term);
     if (used.has(key)) continue;
+    // Never recommend crowded head terms used as probes / curated starters.
+    if (blocked.has(key)) continue;
     if (key === normalizeTerm(c.probe)) continue;
     const volume = c.volume ?? 0;
     if (volume < RECOMMENDED_SEED_MIN_VOLUME) continue;
-    if (c.competition == null || c.competition > RECOMMENDED_SEED_MAX_COMPETITION) {
+    // Require a real Ads competition value (not missing / bucket placeholder).
+    if (
+      c.competition == null ||
+      isBucketCompetition(c.competition) ||
+      c.competition > RECOMMENDED_SEED_MAX_COMPETITION
+    ) {
       continue;
     }
     const score = seedOpportunityScore(c.volume, c.competition);
@@ -432,7 +452,8 @@ export function searchSeedKeywords(
 
 /**
  * Recommended seeds from live API discovery (high volume + low competition),
- * diversified across topic probes. Falls back to curated starters if empty.
+ * diversified across topic probes. No curated fallback — head terms like
+ * "wedding photography" are often high competition and must not be suggested.
  */
 export function buildRecommendations(input: {
   existingSeeds: string[];
@@ -448,16 +469,8 @@ export function buildRecommendations(input: {
     { shuffle: input.shuffle },
   );
 
-  const niches =
-    seeds.length > 0
-      ? []
-      : filterUnusedCurated(existing).map((n) => ({
-          ...n,
-          alreadyRun: false,
-        }));
-
   return {
-    niches,
+    niches: [] as Array<CuratedNiche & { alreadyRun: boolean }>,
     keywords: seeds,
     followOns: seeds,
   };

@@ -413,12 +413,18 @@ export class DataForSeoService {
     const out: ApiSeedCandidate[] = [];
     for (const c of candidates) {
       const row = byTerm.get(c.term.trim().toLowerCase());
-      const volume = row?.searchVolume ?? c.volume;
-      const competition = row?.competition ?? c.competition;
+      // Require Ads enrich — Labs LOW≈0.33 is not trustworthy alone.
+      if (!row) continue;
+      const volume = row.searchVolume ?? c.volume;
+      const competition = row.competition;
       if (volume == null || volume < RECOMMENDED_SEED_MIN_VOLUME) continue;
-      if (competition == null || competition > maxCompetition) continue;
-      // Drop leftover bucket placeholders if enrich didn't improve them.
-      if (!row && isBucketCompetition(competition)) continue;
+      if (
+        competition == null ||
+        isBucketCompetition(competition) ||
+        competition > maxCompetition
+      ) {
+        continue;
+      }
       out.push({
         ...c,
         volume,

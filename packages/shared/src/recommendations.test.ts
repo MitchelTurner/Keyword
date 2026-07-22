@@ -74,6 +74,33 @@ describe("recommendations", () => {
     expect(picks.every((p) => isSeedablePhrase(p.term))).toBe(true);
   });
 
+  it("never recommends crowded probe head terms like wedding photography", () => {
+    const picks = diversifyApiSeedRecommendations(
+      [
+        {
+          term: "wedding photography",
+          category: "Events",
+          probe: "wedding photography",
+          volume: 12000,
+          competition: 0.2,
+        },
+        {
+          term: "elopement photo packages",
+          category: "Events",
+          probe: "wedding photography",
+          volume: 900,
+          competition: 0.18,
+        },
+      ],
+      [],
+      10,
+    );
+    expect(
+      picks.some((p) => p.term.toLowerCase() === "wedding photography"),
+    ).toBe(false);
+    expect(picks.map((p) => p.term)).toContain("elopement photo packages");
+  });
+
   it("detects near-duplicate phrases", () => {
     expect(
       phrasesTooSimilar("dog training classes", "puppy dog training classes"),
@@ -106,13 +133,30 @@ describe("recommendations", () => {
     expect(result.keywords.every((k) => k.source === "api")).toBe(true);
   });
 
-  it("falls back to curated starters when API returns nothing", () => {
+  it("does not fall back to curated high-comp head terms", () => {
     const result = buildRecommendations({
       existingSeeds: [],
       apiCandidates: [],
     });
     expect(result.keywords).toHaveLength(0);
-    expect(result.niches.length).toBeGreaterThan(0);
+    expect(result.niches).toHaveLength(0);
+  });
+
+  it("drops bucketed 0.33 competition placeholders", () => {
+    const picks = diversifyApiSeedRecommendations(
+      [
+        {
+          term: "niche kayak mount",
+          category: "Outdoors",
+          probe: "kayak fishing",
+          volume: 800,
+          competition: 0.33,
+        },
+      ],
+      [],
+      10,
+    );
+    expect(picks).toHaveLength(0);
   });
 
   it("searches seeds with min volume and max competition filters", () => {

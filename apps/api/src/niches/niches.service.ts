@@ -22,11 +22,16 @@ import { PrismaService } from "../prisma/prisma.service";
 import { PipelineService } from "../pipeline/pipeline.service";
 import { CostService } from "../cost/cost.service";
 import { DataForSeoService } from "../dataforseo/dataforseo.service";
+import { ClaudeService } from "../claude/claude.service";
 import {
   DEFAULT_RUBRIC,
   attachDecisionSupport,
   parseRubricConfig,
 } from "./decision";
+
+type ApiSeedCandidate = Awaited<
+  ReturnType<DataForSeoService["discoverRecommendedSeeds"]>
+>[number];
 
 function csvEscape(value: string | number | null | undefined): string {
   if (value == null) return "";
@@ -51,11 +56,19 @@ const IN_FLIGHT_STATUSES = new Set([
 export class NichesService {
   private readonly logger = new Logger(NichesService.name);
 
+  /** Cache AI approve/reject decisions for a candidate set (6h). */
+  private monetizeReviewCache: {
+    key: string;
+    expiresAt: number;
+    approved: Set<string>;
+  } | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pipeline: PipelineService,
     private readonly cost: CostService,
     private readonly dataForSeo: DataForSeoService,
+    private readonly claude: ClaudeService,
   ) {}
 
   estimateCost() {
@@ -386,9 +399,7 @@ export class NichesService {
     const existingSeeds = niches.map((n) => n.seedTerm);
 
     // Live DataForSEO discovery across diverse topic probes (cached).
-    let apiCandidates: Awaited<
-      ReturnType<DataForSeoService["discoverRecommendedSeeds"]>
-    > = [];
+    let apiCandidates: ApiSeedCandidate[] = [];
     try {
       apiCandidates = await this.dataForSeo.discoverRecommendedSeeds({
         forceRefresh: opts.forceRefresh,
@@ -404,11 +415,80 @@ export class NichesService {
       apiCandidates = [];
     }
 
+    // AI gate: keep only seeds suitable for a buildable, monetizable product.
+    if (apiCandidates.length > 0) {
+      try {
+        apiCandidates = await this.filterMonetizableSeeds(
+          apiCandidates,
+          Boolean(opts.forceRefresh),
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`AI monetization review failed: ${message}`);
+        // Fail open so volume/competition seeds still surface if Claude is down.
+      }
+    }
+
     return buildRecommendations({
       existingSeeds,
       apiCandidates,
       shuffle: Boolean(opts.forceRefresh),
     });
+  }
+
+  /**
+   * Ask Claude which seed terms are plausible website/software niches to monetize.
+   * Rejects licensed professions (e.g. "doctor") and similar non-productizable terms.
+   */
+  private async filterMonetizableSeeds(
+    candidates: ApiSeedCandidate[],
+    forceRefresh: boolean,
+  ): Promise<ApiSeedCandidate[]> {
+    const key = candidates
+      .map((c) => c.term.trim().toLowerCase())
+      .sort()
+      .join("|");
+    const ttlMs = 6 * 60 * 60 * 1000;
+
+    if (
+      !forceRefresh &&
+      this.monetizeReviewCache &&
+      this.monetizeReviewCache.key === key &&
+      this.monetizeReviewCache.expiresAt > Date.now()
+    ) {
+      return candidates.filter((c) =>
+        this.monetizeReviewCache!.approved.has(c.term.trim().toLowerCase()),
+      );
+    }
+
+    const review = await this.claude.reviewMonetizableSeeds(
+      candidates.map((c) => c.term),
+    );
+    const approved = new Set(
+      review.reviews
+        .filter((r) => r.approve)
+        .map((r) => r.keyword.trim().toLowerCase()),
+    );
+
+    this.logger.log(
+      JSON.stringify({
+        event: "seed_monetize_review",
+        input: candidates.length,
+        approved: approved.size,
+        rejected: candidates.length - approved.size,
+        forceRefresh,
+      }),
+    );
+
+    this.monetizeReviewCache = {
+      key,
+      expiresAt: Date.now() + ttlMs,
+      approved,
+    };
+
+    return candidates.filter((c) =>
+      approved.has(c.term.trim().toLowerCase()),
+    );
   }
 
   /**

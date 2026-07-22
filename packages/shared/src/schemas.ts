@@ -133,6 +133,25 @@ export const ClaudeKeywordExpandSchema = z.object({
 });
 export type ClaudeKeywordExpand = z.infer<typeof ClaudeKeywordExpandSchema>;
 
+/**
+ * AI review of recommended seed keywords for "can I build a website/software
+ * product and monetize it easily?" — not licensed professions or pure local services.
+ */
+export const ClaudeSeedMonetizationReviewSchema = z.object({
+  reviews: z
+    .array(
+      z.object({
+        keyword: z.string().trim().min(1),
+        approve: z.boolean(),
+        reason: z.string().trim().min(1).max(280),
+      }),
+    )
+    .max(120),
+});
+export type ClaudeSeedMonetizationReview = z.infer<
+  typeof ClaudeSeedMonetizationReviewSchema
+>;
+
 /** DataForSEO wrapper envelope helpers */
 export const DataForSeoTaskMetaSchema = z.object({
   status_code: z.number(),

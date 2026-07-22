@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ClaudeClassificationSchema,
   ClaudeKeywordExpandSchema,
+  ClaudeSeedMonetizationReviewSchema,
   CreateNicheSchema,
   SearchSeedKeywordsSchema,
   SearchVolumeItemSchema,
@@ -157,6 +158,35 @@ describe("ClaudeClassificationSchema", () => {
             keywords: ["a"],
           },
         ],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("ClaudeSeedMonetizationReviewSchema", () => {
+  it("parses approve/reject reviews", () => {
+    const parsed = ClaudeSeedMonetizationReviewSchema.parse({
+      reviews: [
+        {
+          keyword: "invoice software",
+          approve: true,
+          reason: "Clear SaaS product with subscription monetization",
+        },
+        {
+          keyword: "doctor",
+          approve: false,
+          reason: "Licensed profession, not a buildable digital product",
+        },
+      ],
+    });
+    expect(parsed.reviews).toHaveLength(2);
+    expect(parsed.reviews[1]?.approve).toBe(false);
+  });
+
+  it("rejects empty reason", () => {
+    expect(() =>
+      ClaudeSeedMonetizationReviewSchema.parse({
+        reviews: [{ keyword: "x", approve: true, reason: "  " }],
       }),
     ).toThrow();
   });

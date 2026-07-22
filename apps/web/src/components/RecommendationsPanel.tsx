@@ -66,7 +66,7 @@ export default function RecommendationsPanel({
       onClick={() => void onSearchNew()}
       disabled={searching}
       className="rounded border border-emerald-800/70 bg-emerald-950/30 px-2.5 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-950/55 disabled:cursor-wait disabled:opacity-50"
-      title="Run a fresh DataForSEO search for high-volume, low-competition seeds"
+      title="Run a fresh DataForSEO search, then AI-review for buildable monetizable niches"
     >
       {searching ? "Searching live API…" : "Search new seeds"}
     </button>
@@ -76,13 +76,13 @@ export default function RecommendationsPanel({
     return (
       <Panel
         title="Recommended seeds"
-        hint="Live high volume · low competition niches across diverse topics"
+        hint="High volume · low competition · AI-reviewed for buildable monetizable niches"
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-zinc-500">
             {searching
-              ? "Searching DataForSEO across diverse topics — this can take ~20–40s…"
-              : "No low-competition seeds yet. Click Search new seeds to query the live API (volume ≥ 500, competition ≤ 35%)."}
+              ? "Searching DataForSEO and AI-reviewing niches — this can take ~20–40s…"
+              : "No buildable niches yet. Click Search new seeds (volume ≥ 500, competition ≤ 35%, then AI filters out professions like “doctor”)."}
           </p>
           {searchButton}
         </div>
@@ -109,8 +109,8 @@ export default function RecommendationsPanel({
       title="Recommended seeds"
       hint={
         searching
-          ? "Searching live API for a fresh mix…"
-          : `${apiSeeds.length} niches from live API · volume ≥ 500 · competition ≤ 35%`
+          ? "Searching live API + AI review for a fresh mix…"
+          : `${apiSeeds.length} AI-reviewed niches · volume ≥ 500 · competition ≤ 35%`
       }
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

@@ -5,8 +5,10 @@ import {
   ClaudeClassificationSchema,
   ClaudeKeywordExpandSchema,
   ClaudeMergeSchema,
+  ClaudeSeedMonetizationReviewSchema,
   type ClaudeClassification,
   type ClaudeMerge,
+  type ClaudeSeedMonetizationReview,
 } from "@prospector/shared";
 import { CostService } from "../cost/cost.service";
 
@@ -62,6 +64,32 @@ Rules:
 - Include a mix of head terms, long-tails, comparisons, and commercial/informational intents
 - If a candidate list is provided, include every candidate that is relevant and invent additional relevant keywords
 - Do not include duplicates
+- No markdown, no prose outside the JSON`;
+
+const SEED_MONETIZE_SYSTEM = `You review seed keywords for a solo founder / indie hacker who wants to build a website or software product that can monetize relatively easily (SaaS, tools, directories, content sites with clear monetization, digital products, marketplaces, lead-gen sites they can operate).
+
+Approve ONLY keywords where someone without a professional license could plausibly ship a digital product or content business around the demand.
+
+REJECT examples (do not approve):
+- Licensed / in-person professions as the product itself: doctor, dentist, lawyer, attorney, CPA, therapist, plumber as a service business you must perform
+- Pure local "near me" fulfillment that requires being on-site
+- Job-seeking / hiring-only intent with no product angle
+- Brand-only terms with no productizable niche
+- Illegal, adult, or scammy topics
+
+APPROVE examples:
+- Software/tools: invoice software, habit tracker app, meal planning app
+- Vertical software ABOUT a profession (not being the profession): medical billing software, law firm CRM, dental practice scheduling
+- Directories, comparison sites, calculators, niche content + affiliate/ads with clear monetization
+- Digital products / templates / courses around a skill (not requiring you to be a licensed practitioner)
+
+Respond ONLY with JSON:
+{"reviews":[{"keyword":string,"approve":boolean,"reason":string}]}
+
+Rules:
+- Include EVERY input keyword exactly once in reviews (match the keyword string)
+- Be strict: when unsure, reject
+- reason: short (under 200 chars)
 - No markdown, no prose outside the JSON`;
 
 @Injectable()
@@ -237,6 +265,81 @@ export class ClaudeService {
     }
 
     return parsed.data;
+  }
+
+  /**
+   * Filter seed keyword candidates to those suitable for a buildable,
+   * monetizable website/software product (reject licensed professions, etc.).
+   */
+  async reviewMonetizableSeeds(
+    keywords: string[],
+  ): Promise<ClaudeSeedMonetizationReview> {
+    const unique = [
+      ...new Set(
+        keywords
+          .map((k) => k.trim().replace(/\s+/g, " "))
+          .filter((k) => k.length > 0),
+      ),
+    ].slice(0, 80);
+
+    if (unique.length === 0) {
+      return { reviews: [] };
+    }
+
+    const user = `Review these seed keywords for buildable + easily monetizable website/software niches:\n${JSON.stringify(unique)}`;
+
+    const tryParse = (raw: string) => {
+      try {
+        return ClaudeSeedMonetizationReviewSchema.safeParse(JSON.parse(raw));
+      } catch (err) {
+        return {
+          success: false as const,
+          error: {
+            message:
+              err instanceof Error ? err.message : "JSON parse failed",
+          },
+        };
+      }
+    };
+
+    let text = await this.complete(SEED_MONETIZE_SYSTEM, user);
+    let parsed = tryParse(text);
+
+    if (!parsed.success) {
+      this.logger.warn(`Claude seed monetize review parse failed, retrying once`);
+      text = await this.complete(
+        SEED_MONETIZE_SYSTEM,
+        `${user}\n\nPrevious response failed validation: ${parsed.error.message}. Return corrected JSON only.`,
+      );
+      parsed = tryParse(text);
+      if (!parsed.success) {
+        throw new Error(
+          `Claude seed monetize review JSON invalid: ${parsed.error.message}`,
+        );
+      }
+    }
+
+    // Keep only reviews for known inputs; drop hallucinated keywords.
+    const allowed = new Set(unique.map((k) => k.toLowerCase()));
+    const byKey = new Map<string, (typeof parsed.data.reviews)[number]>();
+    for (const r of parsed.data.reviews) {
+      const key = r.keyword.trim().toLowerCase();
+      if (!allowed.has(key) || byKey.has(key)) continue;
+      byKey.set(key, { ...r, keyword: r.keyword.trim() });
+    }
+
+    // Any input Claude omitted → treat as rejected (strict gate).
+    const reviews = unique.map((keyword) => {
+      const existing = byKey.get(keyword.toLowerCase());
+      if (existing) return { ...existing, keyword };
+      return {
+        keyword,
+        approve: false,
+        reason: "Omitted from model response; rejected by default",
+      };
+    });
+
+    return { reviews };
   }
 
   async mergeClusterLabels(

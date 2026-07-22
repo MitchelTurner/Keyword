@@ -192,6 +192,37 @@ export const TOPIC_PROBES: Array<{
   { id: "podcast", category: "Content", seed: "podcast hosting" },
 ];
 
+/**
+ * Extra probes that tend to surface cheaper Ads CPC (templates, generators,
+ * planners, checklists). Used only for low-CPC discovery.
+ */
+export const LOW_CPC_TOPIC_PROBES: Array<{
+  id: string;
+  category: string;
+  seed: string;
+}> = [
+  { id: "resume-template", category: "Career", seed: "resume template" },
+  { id: "invoice-template", category: "SaaS", seed: "invoice template free" },
+  { id: "name-generator", category: "Tools", seed: "business name generator" },
+  { id: "password-gen", category: "Tools", seed: "password generator" },
+  { id: "unit-convert", category: "Tools", seed: "unit converter" },
+  { id: "color-picker", category: "Design tools", seed: "color palette generator" },
+  { id: "study-planner", category: "Edtech", seed: "study planner template" },
+  { id: "chore-chart", category: "Productivity", seed: "chore chart printable" },
+  { id: "garden-planner", category: "Lifestyle", seed: "garden planner" },
+  { id: "wedding-checklist", category: "Lifestyle", seed: "wedding checklist template" },
+  { id: "packing-list", category: "Travel", seed: "packing list template" },
+  { id: "meal-prep", category: "Food tech", seed: "meal prep planner" },
+  { id: "flashcards", category: "Edtech", seed: "flashcard maker" },
+  { id: "quiz-maker", category: "Edtech", seed: "online quiz maker" },
+  { id: "countdown", category: "Tools", seed: "countdown timer" },
+  { id: "word-counter", category: "Tools", seed: "word counter" },
+  { id: "citation", category: "Edtech", seed: "citation generator" },
+  { id: "qr-code", category: "Tools", seed: "qr code generator" },
+  { id: "logo-maker", category: "Design tools", seed: "logo maker free" },
+  { id: "reading-list", category: "Content", seed: "reading list tracker" },
+];
+
 export type SerpPreviewItem = {
   rank: number;
   domain: string;
@@ -249,10 +280,26 @@ export const RECOMMENDED_SEED_MAX_COMPETITION = 0.5;
 /** Default ceiling for low-CPC seed search (USD). Prefer pennies when ranking. */
 export const RECOMMENDED_SEED_MAX_CPC = 1;
 
+/**
+ * Low-CPC niches are rarer at high volume — accept a lower volume floor so
+ * Labs can return more cheap-click long-tails.
+ */
+export const RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME = 200;
+
+/**
+ * Slightly looser Ads competition for low-CPC mode. Cheap clicks often sit in
+ * moderate-competition informational / template niches.
+ */
+export const RECOMMENDED_SEED_LOW_CPC_MAX_COMPETITION = 0.65;
+
+/** How many low-CPC seeds to surface after ranking/diversify. */
+export const RECOMMENDED_SEED_LOW_CPC_LIMIT = 36;
+
 /** Head terms used as discovery probes — usually crowded; never recommend these. */
 export function blockedProbeSeeds(): Set<string> {
   return new Set([
     ...TOPIC_PROBES.map((p) => normalizeTerm(p.seed)),
+    ...LOW_CPC_TOPIC_PROBES.map((p) => normalizeTerm(p.seed)),
     ...CURATED_NICHES.map((n) => normalizeTerm(n.seed)),
   ]);
 }
@@ -330,13 +377,21 @@ function significantTokens(term: string): Set<string> {
 
 /** True when two phrases share most content words (near-duplicates). */
 export function phrasesTooSimilar(a: string, b: string): boolean {
+  return phrasesTooSimilarAt(a, b, 0.55);
+}
+
+export function phrasesTooSimilarAt(
+  a: string,
+  b: string,
+  threshold: number,
+): boolean {
   const ta = significantTokens(a);
   const tb = significantTokens(b);
   if (ta.size === 0 || tb.size === 0) return false;
   let overlap = 0;
   for (const t of ta) if (tb.has(t)) overlap += 1;
   const union = new Set([...ta, ...tb]).size;
-  return overlap / union >= 0.55;
+  return overlap / union >= threshold;
 }
 
 export function filterUnusedCurated(
@@ -360,6 +415,10 @@ export function diversifyApiSeedRecommendations(
     maxCpc?: number;
     /** Prefer cheapest clicks instead of high-CPC commercial value. */
     preferLowCpc?: boolean;
+    minVolume?: number;
+    maxCompetition?: number;
+    /** Jaccard overlap threshold for near-duplicate drop (higher = more permissive). */
+    similarityThreshold?: number;
   } = {},
 ): RecommendationKeyword[] {
   const used = new Set(existingSeeds.map(normalizeTerm));
@@ -371,6 +430,19 @@ export function diversifyApiSeedRecommendations(
   const blocked = blockedProbeSeeds();
   const maxCpc = opts.maxCpc;
   const preferLowCpc = Boolean(opts.preferLowCpc || maxCpc != null);
+  const minVolume =
+    opts.minVolume ??
+    (preferLowCpc
+      ? RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME
+      : RECOMMENDED_SEED_MIN_VOLUME);
+  const maxCompetition =
+    opts.maxCompetition ??
+    (preferLowCpc
+      ? RECOMMENDED_SEED_LOW_CPC_MAX_COMPETITION
+      : RECOMMENDED_SEED_MAX_COMPETITION);
+  // Low-CPC yield is thin — allow closer variants so we don't collapse to 1–2 rows.
+  const similarityThreshold =
+    opts.similarityThreshold ?? (preferLowCpc ? 0.72 : 0.55);
 
   for (const c of candidates) {
     if (!isSeedablePhrase(c.term)) continue;
@@ -380,13 +452,10 @@ export function diversifyApiSeedRecommendations(
     if (blocked.has(key)) continue;
     if (key === normalizeTerm(c.probe)) continue;
     const volume = c.volume ?? 0;
-    if (volume < RECOMMENDED_SEED_MIN_VOLUME) continue;
+    if (volume < minVolume) continue;
     // Require a real Ads competition_index value (null = label/bucket only).
     // Do NOT use isBucketCompetition here — index 33 normalizes to 0.33 and is valid.
-    if (
-      c.competition == null ||
-      c.competition > RECOMMENDED_SEED_MAX_COMPETITION
-    ) {
+    if (c.competition == null || c.competition > maxCompetition) {
       continue;
     }
     if (maxCpc != null) {
@@ -402,6 +471,11 @@ export function diversifyApiSeedRecommendations(
 
   for (const [category, list] of byCategory) {
     list.sort((a, b) => {
+      if (preferLowCpc) {
+        const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
+        const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
+        if (cpcA !== cpcB) return cpcA - cpcB;
+      }
       if (b.score !== a.score) return b.score - a.score;
       return (b.volume ?? 0) - (a.volume ?? 0);
     });
@@ -431,7 +505,13 @@ export function diversifyApiSeedRecommendations(
         idx += 1;
         indexes.set(category, idx);
         const key = normalizeTerm(c.term);
-        if (pickedTerms.some((t) => phrasesTooSimilar(t, c.term))) continue;
+        if (
+          pickedTerms.some((t) =>
+            phrasesTooSimilarAt(t, c.term, similarityThreshold),
+          )
+        ) {
+          continue;
+        }
         if (picked.some((p) => normalizeTerm(p.term) === key)) continue;
         const cpcBit =
           c.cpc != null && c.cpc >= 0
@@ -457,6 +537,47 @@ export function diversifyApiSeedRecommendations(
       }
     }
     if (!added) break;
+  }
+
+  // If round-robin across categories still left us short (few cheap categories),
+  // fill remaining slots cheapest-first from leftovers.
+  if (preferLowCpc && picked.length < limit) {
+    const pickedKeys = new Set(picked.map((p) => normalizeTerm(p.term)));
+    const leftovers = [...byCategory.values()]
+      .flat()
+      .filter((c) => !pickedKeys.has(normalizeTerm(c.term)))
+      .sort((a, b) => {
+        const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
+        const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
+        if (cpcA !== cpcB) return cpcA - cpcB;
+        return (b.volume ?? 0) - (a.volume ?? 0);
+      });
+    for (const c of leftovers) {
+      if (picked.length >= limit) break;
+      if (
+        pickedTerms.some((t) =>
+          phrasesTooSimilarAt(t, c.term, similarityThreshold),
+        )
+      ) {
+        continue;
+      }
+      const cpcBit =
+        c.cpc != null && c.cpc >= 0 ? ` · $${c.cpc.toFixed(2)} CPC` : "";
+      picked.push({
+        term: c.term,
+        source: "api",
+        nicheSeed: c.probe,
+        category: c.category,
+        volume: c.volume,
+        competition: c.competition,
+        cpc: c.cpc ?? null,
+        score: c.score,
+        aiReason: c.aiReason,
+        reason: `Low CPC · ${c.category} · ${competitionLabel(c.competition)} · ${Math.round(c.volume ?? 0).toLocaleString()}/mo${cpcBit}`,
+      });
+      pickedTerms.push(c.term);
+      pickedKeys.add(normalizeTerm(c.term));
+    }
   }
 
   return picked;
@@ -546,16 +667,22 @@ export function buildRecommendations(input: {
   /** Low-CPC mode: keep CPC ≤ maxCpc and rank cheapest clicks first. */
   maxCpc?: number;
   preferLowCpc?: boolean;
+  minVolume?: number;
+  maxCompetition?: number;
+  limit?: number;
 }) {
+  const preferLowCpc = input.preferLowCpc ?? input.maxCpc != null;
   const existing = input.existingSeeds;
   const seeds = diversifyApiSeedRecommendations(
     input.apiCandidates ?? [],
     existing,
-    24,
+    input.limit ?? (preferLowCpc ? RECOMMENDED_SEED_LOW_CPC_LIMIT : 24),
     {
       shuffle: input.shuffle,
       maxCpc: input.maxCpc,
-      preferLowCpc: input.preferLowCpc ?? input.maxCpc != null,
+      preferLowCpc,
+      minVolume: input.minVolume,
+      maxCompetition: input.maxCompetition,
     },
   );
 

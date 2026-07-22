@@ -3,7 +3,10 @@ import { ConfigService } from "@nestjs/config";
 import {
   KeywordIdeaItemSchema,
   LabsKeywordMetricsSchema,
+  LOW_CPC_TOPIC_PROBES,
   MIN_KEYWORD_VOLUME,
+  RECOMMENDED_SEED_LOW_CPC_MAX_COMPETITION,
+  RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME,
   RECOMMENDED_SEED_MAX_COMPETITION,
   RECOMMENDED_SEED_MIN_VOLUME,
   SearchVolumeItemSchema,
@@ -60,6 +63,7 @@ export function extractSearchVolumeItems(result: unknown[] | null | undefined): 
 }
 
 type SeedDiscoveryCache = {
+  mode: "default" | "low_cpc";
   expiresAt: number;
   candidates: ApiSeedCandidate[];
 };
@@ -68,7 +72,9 @@ type SeedDiscoveryCache = {
 export class DataForSeoService {
   private readonly logger = new Logger(DataForSeoService.name);
   private readonly baseUrl = "https://api.dataforseo.com/v3";
-  private seedDiscoveryCache: SeedDiscoveryCache | null = null;
+  /** Separate caches so default high-CPC shortlists never starve low-CPC mode. */
+  private seedDiscoveryCacheDefault: SeedDiscoveryCache | null = null;
+  private seedDiscoveryCacheLowCpc: SeedDiscoveryCache | null = null;
 
   constructor(
     private readonly config: ConfigService,
@@ -285,6 +291,9 @@ export class DataForSeoService {
    *
    * Labs often returns bucketed competition (LOW≈0.33). We re-enrich the
    * shortlist with Google Ads search_volume to get competition_index (0–100).
+   *
+   * Low-CPC mode filters Labs by keyword_info.cpc and shortlists cheapest-first
+   * (volume-first shortlists almost never yield CPC ≤ $1).
    */
   async discoverRecommendedSeeds(opts?: {
     minVolume?: number;
@@ -293,19 +302,30 @@ export class DataForSeoService {
     maxCpc?: number;
     forceRefresh?: boolean;
   }): Promise<ApiSeedCandidate[]> {
-    const minVolume = opts?.minVolume ?? RECOMMENDED_SEED_MIN_VOLUME;
-    const maxCompetition =
-      opts?.maxCompetition ?? RECOMMENDED_SEED_MAX_COMPETITION;
     const maxCpc = opts?.maxCpc;
+    const lowCpc = maxCpc != null;
+    const minVolume =
+      opts?.minVolume ??
+      (lowCpc
+        ? RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME
+        : RECOMMENDED_SEED_MIN_VOLUME);
+    const maxCompetition =
+      opts?.maxCompetition ??
+      (lowCpc
+        ? RECOMMENDED_SEED_LOW_CPC_MAX_COMPETITION
+        : RECOMMENDED_SEED_MAX_COMPETITION);
     const ttlMs = 6 * 60 * 60 * 1000;
+    const cache = lowCpc
+      ? this.seedDiscoveryCacheLowCpc
+      : this.seedDiscoveryCacheDefault;
 
     if (
       !opts?.forceRefresh &&
-      this.seedDiscoveryCache &&
-      this.seedDiscoveryCache.expiresAt > Date.now()
+      cache &&
+      cache.expiresAt > Date.now()
     ) {
       return this.applyMaxCpcFilter(
-        this.seedDiscoveryCache.candidates,
+        cache.candidates,
         maxCpc,
         minVolume,
         maxCompetition,
@@ -315,14 +335,24 @@ export class DataForSeoService {
     const candidates: ApiSeedCandidate[] = [];
     // Shuffle probes; on button refresh use a smaller random subset so the
     // request finishes before proxy timeouts (full 18-probe runs are too slow).
-    const probes = [...TOPIC_PROBES];
+    const probePool = lowCpc
+      ? [...TOPIC_PROBES, ...LOW_CPC_TOPIC_PROBES]
+      : [...TOPIC_PROBES];
+    // Dedupe by seed phrase (low-CPC pool overlaps categories).
+    const seenProbe = new Set<string>();
+    const probes = probePool.filter((p) => {
+      const key = p.seed.trim().toLowerCase();
+      if (seenProbe.has(key)) return false;
+      seenProbe.add(key);
+      return true;
+    });
     for (let i = probes.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [probes[i], probes[j]] = [probes[j]!, probes[i]!];
     }
-    // Low-CPC niches are rarer — probe more topics when filtering by maxCpc.
-    const selectedProbes = opts?.maxCpc != null
-      ? probes.slice(0, opts?.forceRefresh ? 16 : 18)
+    // Low-CPC niches are rarer — probe more topics (incl. template/generator seeds).
+    const selectedProbes = lowCpc
+      ? probes.slice(0, opts?.forceRefresh ? 28 : 32)
       : opts?.forceRefresh
         ? probes.slice(0, 12)
         : probes.slice(0, 16);
@@ -333,7 +363,7 @@ export class DataForSeoService {
       const batch = selectedProbes.slice(i, i + concurrency);
       const settled = await Promise.allSettled(
         batch.map((probe) =>
-          this.fetchSeedIdeasForProbe(probe.seed, minVolume),
+          this.fetchSeedIdeasForProbe(probe.seed, minVolume, maxCpc),
         ),
       );
 
@@ -356,6 +386,7 @@ export class DataForSeoService {
             probe: probe.seed,
             volume: row.volume,
             competition: row.competition,
+            cpc: row.cpc,
           });
         }
       });
@@ -363,32 +394,71 @@ export class DataForSeoService {
 
     if (candidates.length === 0) {
       throw new Error(
-        "DataForSEO returned no low-competition keyword ideas for the probed topics",
+        lowCpc
+          ? `DataForSEO returned no keyword ideas with Labs CPC ≤ $${maxCpc!.toFixed(2)} for the probed topics`
+          : "DataForSEO returned no low-competition keyword ideas for the probed topics",
       );
     }
 
-    // Dedupe, keep strongest volume per term, then get precise Ads competition.
+    // Dedupe: keep best volume; for low-CPC prefer known-cheap Labs CPC.
     const bestByTerm = new Map<string, ApiSeedCandidate>();
     for (const c of candidates) {
       const key = c.term.trim().toLowerCase();
       const prev = bestByTerm.get(key);
-      if (!prev || (c.volume ?? 0) > (prev.volume ?? 0)) {
+      if (!prev) {
+        bestByTerm.set(key, c);
+        continue;
+      }
+      if (lowCpc) {
+        const prevCpc = prev.cpc ?? Number.POSITIVE_INFINITY;
+        const nextCpc = c.cpc ?? Number.POSITIVE_INFINITY;
+        if (nextCpc < prevCpc) {
+          bestByTerm.set(key, c);
+          continue;
+        }
+        if (nextCpc === prevCpc && (c.volume ?? 0) > (prev.volume ?? 0)) {
+          bestByTerm.set(key, c);
+        }
+        continue;
+      }
+      if ((c.volume ?? 0) > (prev.volume ?? 0)) {
         bestByTerm.set(key, c);
       }
     }
-    const shortlist = [...bestByTerm.values()]
-      .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
-      .slice(0, opts?.maxCpc != null ? 100 : opts?.forceRefresh ? 50 : 80);
 
-    const refined = await this.refineSeedCompetition(shortlist, maxCompetition);
+    // Critical: low-CPC shortlist must be cheapest-first. Volume-first almost
+    // exclusively surfaces $5–$80 commercial head terms.
+    const shortlist = [...bestByTerm.values()]
+      .sort((a, b) => {
+        if (lowCpc) {
+          const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
+          const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
+          if (cpcA !== cpcB) return cpcA - cpcB;
+          return (b.volume ?? 0) - (a.volume ?? 0);
+        }
+        return (b.volume ?? 0) - (a.volume ?? 0);
+      })
+      .slice(0, lowCpc ? 250 : opts?.forceRefresh ? 50 : 80);
+
+    const refined = await this.refineSeedCompetition(
+      shortlist,
+      maxCompetition,
+      minVolume,
+    );
 
     this.logger.log(
       JSON.stringify({
         event: "seed_discovery",
+        mode: lowCpc ? "low_cpc" : "default",
         probes: selectedProbes.length,
         labsCandidates: candidates.length,
         shortlist: shortlist.length,
         refined: refined.length,
+        cheapLabs: lowCpc
+          ? candidates.filter(
+              (c) => c.cpc != null && c.cpc <= (maxCpc as number),
+            ).length
+          : null,
         forceRefresh: Boolean(opts?.forceRefresh),
         minVolume,
         maxCompetition,
@@ -402,10 +472,14 @@ export class DataForSeoService {
       );
     }
 
-    this.seedDiscoveryCache = {
+    const nextCache: SeedDiscoveryCache = {
+      mode: lowCpc ? "low_cpc" : "default",
       expiresAt: Date.now() + ttlMs,
       candidates: refined,
     };
+    if (lowCpc) this.seedDiscoveryCacheLowCpc = nextCache;
+    else this.seedDiscoveryCacheDefault = nextCache;
+
     return this.applyMaxCpcFilter(
       refined,
       maxCpc,
@@ -440,6 +514,7 @@ export class DataForSeoService {
   private async refineSeedCompetition(
     candidates: ApiSeedCandidate[],
     maxCompetition: number,
+    minVolume: number = RECOMMENDED_SEED_MIN_VOLUME,
   ): Promise<ApiSeedCandidate[]> {
     if (candidates.length === 0) return [];
 
@@ -472,7 +547,7 @@ export class DataForSeoService {
       // enrichKeywords already dropped label/bucket placeholders via normalizeCompetition.
       // Trust Ads competition_index values — including exact 0.33 (index 33).
       const competition = row.competition;
-      if (volume == null || volume < RECOMMENDED_SEED_MIN_VOLUME) continue;
+      if (volume == null || volume < minVolume) continue;
       if (competition == null || competition > maxCompetition) {
         continue;
       }
@@ -480,7 +555,8 @@ export class DataForSeoService {
         ...c,
         volume,
         competition,
-        cpc: row.cpc ?? null,
+        // Prefer Ads CPC (authoritative for the $1 ceiling).
+        cpc: row.cpc ?? c.cpc ?? null,
       });
     }
     return out;
@@ -550,20 +626,38 @@ export class DataForSeoService {
   private async fetchSeedIdeasForProbe(
     seed: string,
     minVolume: number,
+    maxCpc?: number,
   ): Promise<
-    Array<{ term: string; volume: number | null; competition: number | null }>
+    Array<{
+      term: string;
+      volume: number | null;
+      competition: number | null;
+      cpc: number | null;
+    }>
   > {
-    // Volume-only in Labs — LOW-only starved software niches. Ads refine is the
-    // real competition gate (competition_index).
+    // Default: volume-only in Labs — LOW-only starved software niches.
+    // Low-CPC: also filter keyword_info.cpc so we don't shortlist $50 head terms.
+    const filters: unknown[] =
+      maxCpc != null
+        ? [
+            ["keyword_info.search_volume", ">=", minVolume],
+            "and",
+            ["keyword_info.cpc", "<=", maxCpc],
+          ]
+        : [["keyword_info.search_volume", ">=", minVolume]];
+
     const payload = [
       {
         keywords: [seed],
         location_code: this.locationCode(),
         language_code: this.languageCode(),
         closely_variants: false,
-        filters: [["keyword_info.search_volume", ">=", minVolume]],
-        order_by: ["keyword_info.search_volume,desc"],
-        limit: 40,
+        filters,
+        order_by:
+          maxCpc != null
+            ? ["keyword_info.cpc,asc", "keyword_info.search_volume,desc"]
+            : ["keyword_info.search_volume,desc"],
+        limit: maxCpc != null ? 80 : 40,
       },
     ];
 
@@ -578,6 +672,7 @@ export class DataForSeoService {
       term: string;
       volume: number | null;
       competition: number | null;
+      cpc: number | null;
     }> = [];
 
     for (const raw of items) {
@@ -586,14 +681,35 @@ export class DataForSeoService {
       const term = parsed.data.keyword.trim();
       if (!term) continue;
       const info = parsed.data.keyword_info;
+      const cpc =
+        typeof info?.cpc === "number" && !Number.isNaN(info.cpc)
+          ? info.cpc
+          : null;
+      if (maxCpc != null && (cpc == null || cpc > maxCpc)) continue;
       out.push({
         term,
         volume: info?.search_volume ?? null,
         // Labs floats/labels are coarse — normalizeCompetition nulls buckets.
         // Ads refine fills competition_index afterward.
         competition: normalizeCompetition(info?.competition, null),
+        cpc,
       });
     }
+
+    // If Labs CPC filter was too strict for this probe, fall back to volume-only
+    // and keep rows that look cheap (or unknown CPC for Ads refine).
+    if (maxCpc != null && out.length < 8) {
+      const fallback = await this.fetchSeedIdeasForProbe(seed, minVolume);
+      for (const row of fallback) {
+        if (row.cpc != null && row.cpc > maxCpc) continue;
+        if (out.some((o) => o.term.trim().toLowerCase() === row.term.trim().toLowerCase())) {
+          continue;
+        }
+        out.push(row);
+        if (out.length >= 80) break;
+      }
+    }
+
     return out;
   }
 

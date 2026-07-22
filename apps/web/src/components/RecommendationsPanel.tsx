@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  RECOMMENDED_SEED_LOW_CPC_MAX_COMPETITION,
+  RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME,
   RECOMMENDED_SEED_MAX_COMPETITION,
   RECOMMENDED_SEED_MAX_CPC,
+  RECOMMENDED_SEED_MIN_VOLUME,
 } from "@prospector/shared";
 import type {
   RecommendedKeyword,
@@ -66,15 +69,22 @@ export default function RecommendationsPanel({
 }) {
   const lowCpcMode = mode === "low_cpc";
   const cpcCeiling = maxCpc ?? RECOMMENDED_SEED_MAX_CPC;
+  const compCeiling = lowCpcMode
+    ? RECOMMENDED_SEED_LOW_CPC_MAX_COMPETITION
+    : RECOMMENDED_SEED_MAX_COMPETITION;
+  const minVolume = lowCpcMode
+    ? RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME
+    : RECOMMENDED_SEED_MIN_VOLUME;
 
   const apiSeeds = useMemo(() => {
     const selected = selectedSeed.trim().toLowerCase();
     const filtered = keywords.filter((k) => {
       if (k.source !== "api") return false;
       if (k.term.trim().toLowerCase() === selected) return false;
-      if (k.competition == null || k.competition > RECOMMENDED_SEED_MAX_COMPETITION) {
+      if (k.competition == null || k.competition > compCeiling) {
         return false;
       }
+      if ((k.volume ?? 0) < minVolume) return false;
       if (lowCpcMode) {
         if (k.cpc == null || k.cpc > cpcCeiling) return false;
       }
@@ -87,7 +97,7 @@ export default function RecommendationsPanel({
       if (cpcA !== cpcB) return cpcA - cpcB;
       return (b.volume ?? 0) - (a.volume ?? 0);
     });
-  }, [keywords, selectedSeed, lowCpcMode, cpcCeiling]);
+  }, [keywords, selectedSeed, lowCpcMode, cpcCeiling, compCeiling, minVolume]);
 
   const cycle = useCyclePage(
     apiSeeds.length,
@@ -142,7 +152,7 @@ export default function RecommendationsPanel({
                 ? `AI review unavailable — seeds hidden until review works. ${aiReviewError}`
                 : emptyHint ||
                   (lowCpcMode
-                    ? `No cheap-CPC niches yet. Click Search low CPC (volume ≥ 500, CPC ≤ $${cpcCeiling.toFixed(2)}, prefer pennies).`
+                    ? `No cheap-CPC niches yet. Click Search low CPC (volume ≥ ${minVolume}, CPC ≤ $${cpcCeiling.toFixed(2)}, prefer pennies).`
                     : "No buildable niches yet. Click Search new seeds (volume ≥ 500, competition ≤ 50%, AI filters out professions like “doctor”).")}
           </p>
           {searchButtons}

@@ -6,6 +6,9 @@ import {
 } from "@nestjs/common";
 import {
   MIN_KEYWORD_VOLUME,
+  RECOMMENDED_SEED_LOW_CPC_LIMIT,
+  RECOMMENDED_SEED_LOW_CPC_MAX_COMPETITION,
+  RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME,
   RECOMMENDED_SEED_MAX_CPC,
   analyzeOpportunityTrend,
   buildRecommendations,
@@ -590,6 +593,10 @@ export class NichesService {
   }): Promise<RecommendationsPayload> {
     const mode = opts.mode ?? "default";
     const maxCpc = mode === "low_cpc" ? RECOMMENDED_SEED_MAX_CPC : undefined;
+    const minVolume =
+      mode === "low_cpc" ? RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME : undefined;
+    const maxCompetition =
+      mode === "low_cpc" ? RECOMMENDED_SEED_LOW_CPC_MAX_COMPETITION : undefined;
 
     const niches = await this.prisma.niche.findMany({
       select: { seedTerm: true },
@@ -618,6 +625,8 @@ export class NichesService {
       apiCandidates = await this.dataForSeo.discoverRecommendedSeeds({
         forceRefresh: opts.forceRefresh,
         maxCpc,
+        minVolume,
+        maxCompetition,
       });
       discovered = apiCandidates.length;
     } catch (err) {
@@ -672,6 +681,9 @@ export class NichesService {
       shuffle: opts.forceRefresh,
       maxCpc,
       preferLowCpc: mode === "low_cpc",
+      minVolume,
+      maxCompetition,
+      limit: mode === "low_cpc" ? RECOMMENDED_SEED_LOW_CPC_LIMIT : undefined,
     });
 
     let keywords = built.keywords.filter(

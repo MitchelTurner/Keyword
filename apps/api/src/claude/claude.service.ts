@@ -298,7 +298,7 @@ export class ClaudeService {
           .map((k) => k.trim().replace(/\s+/g, " "))
           .filter((k) => k.length > 0),
       ),
-    ].slice(0, 80);
+    ].slice(0, 120);
 
     if (unique.length === 0) {
       return { reviews: [] };

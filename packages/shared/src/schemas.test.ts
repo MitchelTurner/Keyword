@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  AddTrackedKeywordsSchema,
   ClaudeClassificationSchema,
   ClaudeKeywordExpandSchema,
   ClaudeSeedMonetizationReviewSchema,
   ClaudeThemeBuildBriefSchema,
+  CreateTrackedSiteSchema,
   RejectSeedSchema,
   CreateNicheSchema,
   SearchSeedKeywordsSchema,
@@ -229,5 +231,24 @@ describe("ClaudeThemeBuildBriefSchema", () => {
 describe("RejectSeedSchema", () => {
   it("accepts a term", () => {
     expect(RejectSeedSchema.parse({ term: " doctor " }).term).toBe("doctor");
+  });
+});
+
+describe("tracked site schemas", () => {
+  it("creates a site with optional domain", () => {
+    const parsed = CreateTrackedSiteSchema.parse({
+      name: " HabitKit ",
+      domain: " habitkit.com ",
+    });
+    expect(parsed.name).toBe("HabitKit");
+    expect(parsed.domain).toBe("habitkit.com");
+  });
+
+  it("adds keywords and defaults enrich", () => {
+    const parsed = AddTrackedKeywordsSchema.parse({
+      terms: [" habit tracker ", "morning routine"],
+    });
+    expect(parsed.terms).toEqual(["habit tracker", "morning routine"]);
+    expect(parsed.enrich).toBe(true);
   });
 });

@@ -216,6 +216,59 @@ export type SeedSearchDiagnostics = {
 
 export type SeedSearchMode = "default" | "low_cpc";
 
+export type TrackedKeywordStatus =
+  | "tracking"
+  | "idea"
+  | "targeting"
+  | "dismissed";
+
+export type TrackedKeyword = {
+  id: string;
+  siteId: string;
+  term: string;
+  source: string;
+  status: TrackedKeywordStatus | string;
+  parentId: string | null;
+  searchVolume: number | null;
+  cpc: number | null;
+  competition: number | null;
+  monthlyTrend: Array<{
+    year: number;
+    month: number;
+    search_volume: number;
+  }> | null;
+  notes: string;
+  lastEnrichedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TrackedSiteSummary = {
+  id: string;
+  name: string;
+  domain: string | null;
+  notes: string;
+  keywordCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TrackedSiteDetail = {
+  id: string;
+  name: string;
+  domain: string | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  stats: {
+    tracking: number;
+    ideas: number;
+    targeting: number;
+    dismissed: number;
+  };
+  keywords: TrackedKeyword[];
+};
+
 export type RecommendationsResponse = {
   niches: RecommendedNiche[];
   keywords: RecommendedKeyword[];
@@ -307,6 +360,64 @@ export const api = {
   },
   portfolio: () =>
     request<{ count: number; items: PortfolioItem[] }>("/portfolio"),
+  listSites: () =>
+    request<{ count: number; sites: TrackedSiteSummary[] }>("/sites"),
+  createSite: (body: { name: string; domain?: string; notes?: string }) =>
+    request<TrackedSiteSummary>("/sites", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getSite: (id: string) => request<TrackedSiteDetail>(`/sites/${id}`),
+  updateSite: (
+    id: string,
+    body: { name?: string; domain?: string | null; notes?: string },
+  ) =>
+    request<TrackedSiteSummary>(`/sites/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteSite: (id: string) =>
+    request<{ ok: true }>(`/sites/${id}`, { method: "DELETE" }),
+  addSiteKeywords: (
+    id: string,
+    body: { terms: string[]; enrich?: boolean },
+  ) =>
+    request<TrackedSiteDetail>(`/sites/${id}/keywords`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  enrichSite: (id: string) =>
+    request<{ enriched: number; site: TrackedSiteDetail }>(
+      `/sites/${id}/enrich`,
+      { method: "POST" },
+    ),
+  updateSiteKeyword: (
+    siteId: string,
+    keywordId: string,
+    body: { status?: TrackedKeywordStatus; notes?: string },
+  ) =>
+    request<TrackedKeyword>(`/sites/${siteId}/keywords/${keywordId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteSiteKeyword: (siteId: string, keywordId: string) =>
+    request<{ ok: true }>(`/sites/${siteId}/keywords/${keywordId}`, {
+      method: "DELETE",
+    }),
+  fetchSiteKeywordIdeas: (
+    siteId: string,
+    keywordId: string,
+    body?: { limit?: number },
+  ) =>
+    request<{
+      parentId: string;
+      added: number;
+      ideas: TrackedKeyword[];
+      site: TrackedSiteDetail;
+    }>(`/sites/${siteId}/keywords/${keywordId}/ideas`, {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    }),
   costEstimate: () => request<CostEstimate>("/niches/cost-estimate"),
   createNiche: (seedTerm: string) =>
     request<NicheListItem>("/niches", {

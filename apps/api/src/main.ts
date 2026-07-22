@@ -56,7 +56,13 @@ async function bootstrap() {
   );
 
   // Keep in sync with @Controller() paths — SPA fallback must not steal these.
-  const API_PREFIXES = ["/niches", "/health", "/portfolio", "/recommendations"];
+  const API_PREFIXES = [
+    "/niches",
+    "/health",
+    "/portfolio",
+    "/recommendations",
+    "/sites",
+  ];
 
   function isApiRequest(req: Request): boolean {
     if (req.method !== "GET" && req.method !== "HEAD") return true;

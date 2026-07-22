@@ -107,3 +107,46 @@ model ApiCostLog {
   @@index([nicheId])
   @@index([createdAt])
 }
+
+/// Operator-owned website / product whose keywords are tracked separately from niche research.
+model TrackedSite {
+  id        String           @id @default(cuid())
+  name      String
+  domain    String?
+  notes     String           @default("")
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  keywords  TrackedKeyword[]
+
+  @@index([createdAt])
+}
+
+/// Keywords you already rank for / target on a site, plus idea children expanded from them.
+model TrackedKeyword {
+  id             String          @id @default(cuid())
+  siteId         String
+  site           TrackedSite     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  term           String
+  /// manual | idea | imported
+  source         String          @default("manual")
+  /// tracking | idea | targeting | dismissed
+  status         String          @default("tracking")
+  /// When source=idea, the tracked keyword that spawned this suggestion.
+  parentId       String?
+  parent         TrackedKeyword? @relation("KeywordIdeas", fields: [parentId], references: [id], onDelete: SetNull)
+  ideas          TrackedKeyword[] @relation("KeywordIdeas")
+  searchVolume   Int?
+  cpc            Float?
+  competition    Float?
+  monthlyTrend   Json?
+  raw            Json?
+  notes          String          @default("")
+  lastEnrichedAt DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([siteId, term])
+  @@index([siteId])
+  @@index([status])
+  @@index([parentId])
+}

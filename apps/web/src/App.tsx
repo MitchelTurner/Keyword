@@ -2,6 +2,7 @@ import { Link, NavLink, Route, Routes } from "react-router-dom";
 import NicheListPage from "./pages/NicheListPage";
 import NicheDetailPage from "./pages/NicheDetailPage";
 import PortfolioPage from "./pages/PortfolioPage";
+import SitesPage from "./pages/SitesPage";
 
 function navClass({ isActive }: { isActive: boolean }) {
   return [
@@ -30,6 +31,9 @@ export default function App() {
               <NavLink to="/" end className={navClass}>
                 Niches
               </NavLink>
+              <NavLink to="/sites" className={navClass}>
+                My sites
+              </NavLink>
               <NavLink to="/portfolio" className={navClass}>
                 Portfolio
               </NavLink>
@@ -43,6 +47,7 @@ export default function App() {
       <main className="mx-auto max-w-7xl px-4 py-7">
         <Routes>
           <Route path="/" element={<NicheListPage />} />
+          <Route path="/sites" element={<SitesPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
           <Route path="/niches/:id" element={<NicheDetailPage />} />
         </Routes>

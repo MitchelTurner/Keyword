@@ -176,6 +176,71 @@ export const RejectSeedSchema = z.object({
 });
 export type RejectSeedDto = z.infer<typeof RejectSeedSchema>;
 
+/** Tracked website / product whose keywords the operator monitors. */
+export const CreateTrackedSiteSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  domain: z
+    .string()
+    .trim()
+    .max(200)
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  notes: z.string().trim().max(2000).optional(),
+});
+export type CreateTrackedSiteDto = z.infer<typeof CreateTrackedSiteSchema>;
+
+export const UpdateTrackedSiteSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    domain: z
+      .string()
+      .trim()
+      .max(200)
+      .nullable()
+      .optional()
+      .transform((v) => (v === "" ? null : v)),
+    notes: z.string().trim().max(2000).optional(),
+  })
+  .refine(
+    (v) =>
+      v.name !== undefined || v.domain !== undefined || v.notes !== undefined,
+    { message: "At least one field is required" },
+  );
+export type UpdateTrackedSiteDto = z.infer<typeof UpdateTrackedSiteSchema>;
+
+export const TrackedKeywordStatusSchema = z.enum([
+  "tracking",
+  "idea",
+  "targeting",
+  "dismissed",
+]);
+export type TrackedKeywordStatus = z.infer<typeof TrackedKeywordStatusSchema>;
+
+export const AddTrackedKeywordsSchema = z.object({
+  terms: z.array(z.string().trim().min(1).max(120)).min(1).max(100),
+  /** When true (default), pull Ads volume/CPC/competition after insert. */
+  enrich: z.boolean().optional().default(true),
+});
+export type AddTrackedKeywordsDto = z.infer<typeof AddTrackedKeywordsSchema>;
+
+export const UpdateTrackedKeywordSchema = z
+  .object({
+    status: TrackedKeywordStatusSchema.optional(),
+    notes: z.string().trim().max(2000).optional(),
+  })
+  .refine((v) => v.status !== undefined || v.notes !== undefined, {
+    message: "At least one field is required",
+  });
+export type UpdateTrackedKeywordDto = z.infer<
+  typeof UpdateTrackedKeywordSchema
+>;
+
+export const FetchKeywordIdeasSchema = z.object({
+  /** Max idea terms to keep after expand (enriched). */
+  limit: z.coerce.number().int().min(5).max(80).optional().default(30),
+});
+export type FetchKeywordIdeasDto = z.infer<typeof FetchKeywordIdeasSchema>;
+
 /** DataForSEO wrapper envelope helpers */
 export const DataForSeoTaskMetaSchema = z.object({
   status_code: z.number(),

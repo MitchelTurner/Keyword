@@ -6,6 +6,7 @@ import { DataForSeoModule } from "./dataforseo/dataforseo.module";
 import { ClaudeModule } from "./claude/claude.module";
 import { PipelineModule } from "./pipeline/pipeline.module";
 import { NichesModule } from "./niches/niches.module";
+import { SitesModule } from "./sites/sites.module";
 import { CostModule } from "./cost/cost.module";
 
 @Module({
@@ -18,6 +19,7 @@ import { CostModule } from "./cost/cost.module";
     ClaudeModule,
     PipelineModule,
     NichesModule,
+    SitesModule,
   ],
 })
 export class AppModule {}

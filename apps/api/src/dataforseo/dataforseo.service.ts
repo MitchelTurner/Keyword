@@ -307,9 +307,17 @@ export class DataForSeoService {
 
     const candidates: ApiSeedCandidate[] = [];
     // Probe in small parallel batches — each probe is a distinct market.
+    // On forced refresh, rotate probe order so the shortlist can shift.
+    const probes = [...TOPIC_PROBES];
+    if (opts?.forceRefresh) {
+      for (let i = probes.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [probes[i], probes[j]] = [probes[j]!, probes[i]!];
+      }
+    }
     const batchSize = 4;
-    for (let i = 0; i < TOPIC_PROBES.length; i += batchSize) {
-      const batch = TOPIC_PROBES.slice(i, i + batchSize);
+    for (let i = 0; i < probes.length; i += batchSize) {
+      const batch = probes.slice(i, i + batchSize);
       const settled = await Promise.allSettled(
         batch.map((probe) => this.fetchSeedIdeasForProbe(probe.seed, minVolume)),
       );

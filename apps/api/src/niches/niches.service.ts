@@ -379,7 +379,7 @@ export class NichesService {
     return { count: items.length, items };
   }
 
-  async recommendations() {
+  async recommendations(opts: { forceRefresh?: boolean } = {}) {
     const niches = await this.prisma.niche.findMany({
       select: { seedTerm: true },
     });
@@ -387,7 +387,7 @@ export class NichesService {
 
     // Live DataForSEO discovery across diverse topic probes (cached).
     const apiCandidates = await this.dataForSeo
-      .discoverRecommendedSeeds()
+      .discoverRecommendedSeeds({ forceRefresh: opts.forceRefresh })
       .catch((err) => {
         this.logger.warn(
           `Live seed discovery failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -398,6 +398,7 @@ export class NichesService {
     return buildRecommendations({
       existingSeeds,
       apiCandidates,
+      shuffle: Boolean(opts.forceRefresh),
     });
   }
 

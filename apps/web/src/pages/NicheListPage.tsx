@@ -31,6 +31,7 @@ export default function NicheListPage() {
   const [recs, setRecs] = useState<RecommendationsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [searchingSeeds, setSearchingSeeds] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -112,6 +113,18 @@ export default function NicheListPage() {
     await refresh();
   }
 
+  async function onSearchNewSeeds() {
+    setSearchingSeeds(true);
+    setError(null);
+    try {
+      setRecs(await api.recommendations({ refresh: true }));
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSearchingSeeds(false);
+    }
+  }
+
   return (
     <div className="space-y-6 animate-fade-up">
       <PageHeader
@@ -166,14 +179,14 @@ export default function NicheListPage() {
         )}
       </Panel>
 
-      {recs && (
-        <RecommendationsPanel
-          niches={recs.niches}
-          keywords={recs.keywords}
-          selectedSeed={seedTerm}
-          onPick={setSeedTerm}
-        />
-      )}
+      <RecommendationsPanel
+        niches={recs?.niches ?? []}
+        keywords={recs?.keywords ?? []}
+        selectedSeed={seedTerm}
+        onPick={setSeedTerm}
+        onSearchNew={onSearchNewSeeds}
+        searching={searchingSeeds}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
         <div className="flex items-center gap-3">

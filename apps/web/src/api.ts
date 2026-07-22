@@ -219,7 +219,10 @@ export const api = {
       costEstimate: CostEstimate;
       niches: NicheListItem[];
     }>("/niches"),
-  recommendations: () => request<RecommendationsResponse>("/recommendations"),
+  recommendations: (opts?: { refresh?: boolean }) =>
+    request<RecommendationsResponse>(
+      `/recommendations${opts?.refresh ? "?refresh=1" : ""}`,
+    ),
   searchSeeds: (params: {
     q?: string;
     minVolume?: number;

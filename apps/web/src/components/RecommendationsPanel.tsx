@@ -32,11 +32,15 @@ export default function RecommendationsPanel({
   keywords,
   selectedSeed,
   onPick,
+  onSearchNew,
+  searching = false,
 }: {
   niches: RecommendedNiche[];
   keywords: RecommendedKeyword[];
   selectedSeed: string;
   onPick: (term: string) => void;
+  onSearchNew?: () => void | Promise<void>;
+  searching?: boolean;
 }) {
   const apiSeeds = useMemo(() => {
     const selected = selectedSeed.trim().toLowerCase();
@@ -63,15 +67,31 @@ export default function RecommendationsPanel({
   );
   const pageItems = items.slice(cycle.start, cycle.start + PAGE_SIZE);
 
+  const searchButton = onSearchNew ? (
+    <button
+      type="button"
+      onClick={() => void onSearchNew()}
+      disabled={searching}
+      className="rounded border border-emerald-800/70 bg-emerald-950/30 px-2.5 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-950/55 disabled:cursor-wait disabled:opacity-50"
+      title="Run a fresh DataForSEO search for high-volume, low-competition seeds"
+    >
+      {searching ? "Searching…" : "Search new seeds"}
+    </button>
+  ) : null;
+
   if (items.length === 0) {
     return (
       <Panel
         title="Recommended seeds"
         hint="Live high volume · low competition niches across diverse topics"
       >
-        <p className="text-xs text-zinc-500">
-          No live suggestions yet. Check DataForSEO credentials, then refresh.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-zinc-500">
+            No live suggestions yet. Search the API for high-volume, low-competition
+            niche seeds across diverse topics.
+          </p>
+          {searchButton}
+        </div>
       </Panel>
     );
   }
@@ -113,7 +133,8 @@ export default function RecommendationsPanel({
             {items.length}
           </span>
         </p>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {searchButton}
           {cycle.pageCount > 1 && (
             <>
               <button
@@ -135,7 +156,7 @@ export default function RecommendationsPanel({
           <button
             type="button"
             onClick={pickNext}
-            className="rounded border border-emerald-800/70 bg-emerald-950/30 px-2 py-0.5 text-xs text-emerald-300 transition hover:bg-emerald-950/55"
+            className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100"
           >
             Next seed →
           </button>

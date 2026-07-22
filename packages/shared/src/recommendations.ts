@@ -297,6 +297,7 @@ export function diversifyApiSeedRecommendations(
   candidates: ApiSeedCandidate[],
   existingSeeds: string[],
   limit = 24,
+  opts: { shuffle?: boolean } = {},
 ): RecommendationKeyword[] {
   const used = new Set(existingSeeds.map(normalizeTerm));
   const byCategory = new Map<
@@ -328,7 +329,14 @@ export function diversifyApiSeedRecommendations(
     byCategory.set(category, list);
   }
 
-  const categories = [...byCategory.keys()].sort();
+  let categories = [...byCategory.keys()].sort();
+  if (opts.shuffle) {
+    // Fisher–Yates so each "Search new seeds" pass surfaces a different mix.
+    for (let i = categories.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [categories[i], categories[j]] = [categories[j]!, categories[i]!];
+    }
+  }
   const indexes = new Map(categories.map((c) => [c, 0]));
   const picked: RecommendationKeyword[] = [];
   const pickedTerms: string[] = [];
@@ -429,12 +437,15 @@ export function searchSeedKeywords(
 export function buildRecommendations(input: {
   existingSeeds: string[];
   apiCandidates?: ApiSeedCandidate[];
+  /** Shuffle category order for a fresher mix (e.g. after "Search new seeds"). */
+  shuffle?: boolean;
 }) {
   const existing = input.existingSeeds;
   const seeds = diversifyApiSeedRecommendations(
     input.apiCandidates ?? [],
     existing,
     24,
+    { shuffle: input.shuffle },
   );
 
   const niches =

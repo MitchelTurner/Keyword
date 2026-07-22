@@ -11,8 +11,9 @@ export class RecommendationsController {
   constructor(private readonly niches: NichesService) {}
 
   @Get()
-  list() {
-    return this.niches.recommendations();
+  list(@Query("refresh") refresh?: string) {
+    const forceRefresh = refresh === "1" || refresh === "true";
+    return this.niches.recommendations({ forceRefresh });
   }
 
   @Get("seeds")

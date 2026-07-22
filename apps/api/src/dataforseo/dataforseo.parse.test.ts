@@ -45,9 +45,10 @@ describe("DataForSEO response parsing", () => {
     const parsed = items.map((item) => SearchVolumeItemSchema.parse(item));
 
     const high = parsed.find((p) => p.keyword === "invoice software");
-    expect(normalizeCompetition(high?.competition, high?.competition_index)).toBe(
-      1,
-    );
+    // Prefer competition_index (72) over the HIGH label bucket.
+    expect(
+      normalizeCompetition(high?.competition, high?.competition_index),
+    ).toBeCloseTo(0.72);
 
     const withIndex = parsed.find((p) => p.keyword === "free invoice app");
     expect(withIndex?.competition_index).toBe(45);
@@ -66,10 +67,11 @@ describe("DataForSEO response parsing", () => {
 });
 
 describe("normalizeCompetition", () => {
-  it("maps HIGH/MEDIUM/LOW and index fallbacks", () => {
+  it("prefers competition_index over LOW/MEDIUM/HIGH labels", () => {
     expect(normalizeCompetition("HIGH")).toBe(1);
     expect(normalizeCompetition("medium")).toBeCloseTo(0.66);
     expect(normalizeCompetition(null, 45)).toBeCloseTo(0.45);
+    expect(normalizeCompetition("LOW", 12)).toBeCloseTo(0.12);
     expect(normalizeCompetition(0.72)).toBeCloseTo(0.72);
   });
 });

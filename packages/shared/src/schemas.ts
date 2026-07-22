@@ -187,11 +187,20 @@ const COMPETITION_LABELS: Record<string, number> = {
   high: 1,
 };
 
-/** Normalize Google Ads competition string/number + competition_index into 0–1. */
+/** Coarse Google Ads bucket midpoints — prefer competition_index when present. */
+const BUCKET_COMPETITION = new Set([0.33, 0.3333, 0.66, 0.6667, 1, 1.0]);
+
+/**
+ * Normalize Google Ads competition into 0–1.
+ * Prefer competition_index (0–100) — labels / bucket floats collapse to ~0.33/0.66/1.
+ */
 export function normalizeCompetition(
   competition: number | string | null | undefined,
   competitionIndex?: number | null,
 ): number | null {
+  if (competitionIndex != null && !Number.isNaN(competitionIndex)) {
+    return Math.min(1, Math.max(0, competitionIndex / 100));
+  }
   if (typeof competition === "number" && !Number.isNaN(competition)) {
     return competition > 1 ? competition / 100 : competition;
   }
@@ -199,8 +208,14 @@ export function normalizeCompetition(
     const mapped = COMPETITION_LABELS[competition.trim().toLowerCase()];
     if (mapped != null) return mapped;
   }
-  if (competitionIndex != null && !Number.isNaN(competitionIndex)) {
-    return competitionIndex / 100;
-  }
   return null;
+}
+
+/** True when a competition value looks like a LOW/MEDIUM/HIGH bucket, not a precise index. */
+export function isBucketCompetition(
+  competition: number | null | undefined,
+): boolean {
+  if (competition == null || Number.isNaN(competition)) return false;
+  const rounded = Math.round(competition * 10000) / 10000;
+  return BUCKET_COMPETITION.has(rounded) || BUCKET_COMPETITION.has(competition);
 }

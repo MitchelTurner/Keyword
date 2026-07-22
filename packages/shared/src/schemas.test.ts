@@ -7,6 +7,7 @@ import {
   SearchVolumeItemSchema,
   UpdateNicheAssumptionsSchema,
   UpdateOpportunitySchema,
+  isBucketCompetition,
   normalizeCompetition,
 } from "./schemas";
 
@@ -101,18 +102,28 @@ describe("ClaudeKeywordExpandSchema", () => {
 });
 
 describe("SearchVolumeItemSchema", () => {
-  it("accepts Google Ads string competition labels", () => {
+  it("prefers competition_index over LOW/MEDIUM/HIGH labels", () => {
     const parsed = SearchVolumeItemSchema.parse({
       keyword: "buy laptop",
       search_volume: 2900,
       cpc: 7.95,
-      competition: "HIGH",
-      competition_index: 100,
+      competition: "LOW",
+      competition_index: 12,
       monthly_searches: [{ year: 2023, month: 10, search_volume: 2400 }],
     });
-    expect(normalizeCompetition(parsed.competition, parsed.competition_index)).toBe(
-      1,
-    );
+    expect(
+      normalizeCompetition(parsed.competition, parsed.competition_index),
+    ).toBeCloseTo(0.12);
+  });
+
+  it("accepts Google Ads string competition labels when index missing", () => {
+    expect(normalizeCompetition("HIGH", null)).toBe(1);
+    expect(normalizeCompetition("LOW", null)).toBeCloseTo(0.33);
+  });
+
+  it("detects bucketed competition placeholders", () => {
+    expect(isBucketCompetition(0.33)).toBe(true);
+    expect(isBucketCompetition(0.12)).toBe(false);
   });
 });
 

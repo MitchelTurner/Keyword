@@ -8,6 +8,7 @@ import {
   RECOMMENDED_SEED_MIN_VOLUME,
   SearchVolumeItemSchema,
   TOPIC_PROBES,
+  isBucketCompetition,
   normalizeCompetition,
   type ApiSeedCandidate,
   type SearchVolumeItem,
@@ -282,6 +283,9 @@ export class DataForSeoService {
   /**
    * Live discovery of high-volume / low-competition seed ideas across
    * widely different topic probes. Cached in-memory to avoid repeat spend.
+   *
+   * Labs often returns bucketed competition (LOW≈0.33). We re-enrich the
+   * shortlist with Google Ads search_volume to get competition_index (0–100).
    */
   async discoverRecommendedSeeds(opts?: {
     minVolume?: number;
@@ -307,9 +311,7 @@ export class DataForSeoService {
     for (let i = 0; i < TOPIC_PROBES.length; i += batchSize) {
       const batch = TOPIC_PROBES.slice(i, i + batchSize);
       const settled = await Promise.allSettled(
-        batch.map((probe) =>
-          this.fetchSeedIdeasForProbe(probe.seed, minVolume, maxCompetition),
-        ),
+        batch.map((probe) => this.fetchSeedIdeasForProbe(probe.seed, minVolume)),
       );
 
       settled.forEach((result, idx) => {
@@ -336,11 +338,28 @@ export class DataForSeoService {
       });
     }
 
+    // Dedupe, keep strongest volume per term, then get precise Ads competition.
+    const bestByTerm = new Map<string, ApiSeedCandidate>();
+    for (const c of candidates) {
+      const key = c.term.trim().toLowerCase();
+      const prev = bestByTerm.get(key);
+      if (!prev || (c.volume ?? 0) > (prev.volume ?? 0)) {
+        bestByTerm.set(key, c);
+      }
+    }
+    const shortlist = [...bestByTerm.values()]
+      .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
+      .slice(0, 120);
+
+    const refined = await this.refineSeedCompetition(shortlist, maxCompetition);
+
     this.logger.log(
       JSON.stringify({
         event: "seed_discovery",
         probes: TOPIC_PROBES.length,
-        candidates: candidates.length,
+        labsCandidates: candidates.length,
+        shortlist: shortlist.length,
+        refined: refined.length,
         minVolume,
         maxCompetition,
       }),
@@ -348,18 +367,66 @@ export class DataForSeoService {
 
     this.seedDiscoveryCache = {
       expiresAt: Date.now() + ttlMs,
-      candidates,
+      candidates: refined,
     };
-    return candidates;
+    return refined;
+  }
+
+  /**
+   * Replace bucketed Labs competition (~0.33 for all LOW) with Google Ads
+   * competition_index values, then keep only truly low-competition terms.
+   */
+  private async refineSeedCompetition(
+    candidates: ApiSeedCandidate[],
+    maxCompetition: number,
+  ): Promise<ApiSeedCandidate[]> {
+    if (candidates.length === 0) return [];
+
+    const enriched = await this.enrichKeywords(
+      candidates.map((c) => c.term),
+    ).catch((err) => {
+      this.logger.warn(
+        `Seed competition refine failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return [] as EnrichedKeywordRow[];
+    });
+
+    const byTerm = new Map(
+      enriched.map((row) => [
+        (row.requestedKeyword ?? row.keyword).trim().toLowerCase(),
+        row,
+      ]),
+    );
+    // Also index by returned keyword spelling.
+    for (const row of enriched) {
+      byTerm.set(row.keyword.trim().toLowerCase(), row);
+    }
+
+    const out: ApiSeedCandidate[] = [];
+    for (const c of candidates) {
+      const row = byTerm.get(c.term.trim().toLowerCase());
+      const volume = row?.searchVolume ?? c.volume;
+      const competition = row?.competition ?? c.competition;
+      if (volume == null || volume < RECOMMENDED_SEED_MIN_VOLUME) continue;
+      if (competition == null || competition > maxCompetition) continue;
+      // Drop leftover bucket placeholders if enrich didn't improve them.
+      if (!row && isBucketCompetition(competition)) continue;
+      out.push({
+        ...c,
+        volume,
+        competition,
+      });
+    }
+    return out;
   }
 
   private async fetchSeedIdeasForProbe(
     seed: string,
     minVolume: number,
-    maxCompetition: number,
   ): Promise<
     Array<{ term: string; volume: number | null; competition: number | null }>
   > {
+    // Filter by LOW competition_level in Labs; refine to competition_index after.
     const payload = [
       {
         keywords: [seed],
@@ -369,7 +436,7 @@ export class DataForSeoService {
         filters: [
           ["keyword_info.search_volume", ">=", minVolume],
           "and",
-          ["keyword_info.competition", "<=", maxCompetition],
+          ["keyword_info.competition_level", "=", "LOW"],
         ],
         order_by: ["keyword_info.search_volume,desc"],
         limit: 30,
@@ -398,7 +465,10 @@ export class DataForSeoService {
       out.push({
         term,
         volume: info?.search_volume ?? null,
-        competition: info?.competition ?? null,
+        // Labs LOW often serializes as 0.33 — treat as unknown until Ads refine.
+        competition: isBucketCompetition(info?.competition ?? null)
+          ? null
+          : (info?.competition ?? null),
       });
     }
     return out;

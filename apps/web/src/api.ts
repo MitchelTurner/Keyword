@@ -220,9 +220,11 @@ export const api = {
       niches: NicheListItem[];
     }>("/niches"),
   recommendations: (opts?: { refresh?: boolean }) =>
-    request<RecommendationsResponse>(
-      `/recommendations${opts?.refresh ? "?refresh=1" : ""}`,
-    ),
+    opts?.refresh
+      ? request<RecommendationsResponse>("/recommendations/refresh", {
+          method: "POST",
+        })
+      : request<RecommendationsResponse>("/recommendations"),
   searchSeeds: (params: {
     q?: string;
     minVolume?: number;

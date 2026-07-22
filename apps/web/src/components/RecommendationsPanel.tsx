@@ -68,7 +68,7 @@ export default function RecommendationsPanel({
       className="rounded border border-emerald-800/70 bg-emerald-950/30 px-2.5 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-950/55 disabled:cursor-wait disabled:opacity-50"
       title="Run a fresh DataForSEO search for high-volume, low-competition seeds"
     >
-      {searching ? "Searching…" : "Search new seeds"}
+      {searching ? "Searching live API…" : "Search new seeds"}
     </button>
   ) : null;
 
@@ -78,10 +78,11 @@ export default function RecommendationsPanel({
         title="Recommended seeds"
         hint="Live high volume · low competition niches across diverse topics"
       >
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-zinc-500">
-            No low-competition seeds yet. Search the API for high-volume niches
-            with competition at or below 35%.
+            {searching
+              ? "Searching DataForSEO across diverse topics — this can take ~20–40s…"
+              : "No low-competition seeds yet. Click Search new seeds to query the live API (volume ≥ 500, competition ≤ 35%)."}
           </p>
           {searchButton}
         </div>
@@ -106,7 +107,11 @@ export default function RecommendationsPanel({
   return (
     <Panel
       title="Recommended seeds"
-      hint={`${apiSeeds.length} niches from live API · volume ≥ 500 · competition ≤ 35%`}
+      hint={
+        searching
+          ? "Searching live API for a fresh mix…"
+          : `${apiSeeds.length} niches from live API · volume ≥ 500 · competition ≤ 35%`
+      }
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] uppercase tracking-wide text-zinc-500">

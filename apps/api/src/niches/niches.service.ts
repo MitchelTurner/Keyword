@@ -386,14 +386,23 @@ export class NichesService {
     const existingSeeds = niches.map((n) => n.seedTerm);
 
     // Live DataForSEO discovery across diverse topic probes (cached).
-    const apiCandidates = await this.dataForSeo
-      .discoverRecommendedSeeds({ forceRefresh: opts.forceRefresh })
-      .catch((err) => {
-        this.logger.warn(
-          `Live seed discovery failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        return [];
+    let apiCandidates: Awaited<
+      ReturnType<DataForSeoService["discoverRecommendedSeeds"]>
+    > = [];
+    try {
+      apiCandidates = await this.dataForSeo.discoverRecommendedSeeds({
+        forceRefresh: opts.forceRefresh,
       });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Live seed discovery failed: ${message}`);
+      // On explicit "Search new seeds", surface the failure to the UI.
+      if (opts.forceRefresh) {
+        throw new BadRequestException(`Seed search failed: ${message}`);
+      }
+      // Cold load: fall back to cache if we have one from a prior success.
+      apiCandidates = [];
+    }
 
     return buildRecommendations({
       existingSeeds,

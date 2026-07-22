@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from "@nestjs/common";
+import { Controller, Get, Post, Query } from "@nestjs/common";
 import {
   SearchSeedKeywordsSchema,
   type SearchSeedKeywordsDto,
@@ -14,6 +14,12 @@ export class RecommendationsController {
   list(@Query("refresh") refresh?: string) {
     const forceRefresh = refresh === "1" || refresh === "true";
     return this.niches.recommendations({ forceRefresh });
+  }
+
+  /** Explicit refresh used by the "Search new seeds" button. */
+  @Post("refresh")
+  refresh() {
+    return this.niches.recommendations({ forceRefresh: true });
   }
 
   @Get("seeds")

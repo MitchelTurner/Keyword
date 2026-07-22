@@ -117,9 +117,27 @@ export default function NicheListPage() {
     setSearchingSeeds(true);
     setError(null);
     try {
-      setRecs(await api.recommendations({ refresh: true }));
+      const next = await api.recommendations({ refresh: true });
+      setRecs(next);
+      if (next.keywords.length === 0) {
+        setError(
+          "Search finished but found no seeds under the volume/competition filters. Try again.",
+        );
+      }
     } catch (err) {
-      setError(String(err));
+      let message = String(err);
+      // Nest BadRequest body is often JSON — pull the readable message out.
+      try {
+        const parsed = JSON.parse(message) as {
+          message?: string | string[];
+        };
+        if (typeof parsed.message === "string") message = parsed.message;
+        else if (Array.isArray(parsed.message))
+          message = parsed.message.join("; ");
+      } catch {
+        /* keep raw */
+      }
+      setError(message);
     } finally {
       setSearchingSeeds(false);
     }

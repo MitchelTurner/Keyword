@@ -306,20 +306,25 @@ export class DataForSeoService {
     }
 
     const candidates: ApiSeedCandidate[] = [];
-    // Probe in small parallel batches — each probe is a distinct market.
-    // On forced refresh, rotate probe order so the shortlist can shift.
+    // Shuffle probes; on button refresh use a smaller random subset so the
+    // request finishes before proxy timeouts (full 18-probe runs are too slow).
     const probes = [...TOPIC_PROBES];
-    if (opts?.forceRefresh) {
-      for (let i = probes.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [probes[i], probes[j]] = [probes[j]!, probes[i]!];
-      }
+    for (let i = probes.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [probes[i], probes[j]] = [probes[j]!, probes[i]!];
     }
-    const batchSize = 4;
-    for (let i = 0; i < probes.length; i += batchSize) {
-      const batch = probes.slice(i, i + batchSize);
+    const selectedProbes = opts?.forceRefresh
+      ? probes.slice(0, 8)
+      : probes.slice(0, 12);
+
+    // Parallel probe calls (bounded) — much faster than serial batches.
+    const concurrency = 6;
+    for (let i = 0; i < selectedProbes.length; i += concurrency) {
+      const batch = selectedProbes.slice(i, i + concurrency);
       const settled = await Promise.allSettled(
-        batch.map((probe) => this.fetchSeedIdeasForProbe(probe.seed, minVolume)),
+        batch.map((probe) =>
+          this.fetchSeedIdeasForProbe(probe.seed, minVolume),
+        ),
       );
 
       settled.forEach((result, idx) => {
@@ -346,6 +351,12 @@ export class DataForSeoService {
       });
     }
 
+    if (candidates.length === 0) {
+      throw new Error(
+        "DataForSEO returned no low-competition keyword ideas for the probed topics",
+      );
+    }
+
     // Dedupe, keep strongest volume per term, then get precise Ads competition.
     const bestByTerm = new Map<string, ApiSeedCandidate>();
     for (const c of candidates) {
@@ -357,21 +368,28 @@ export class DataForSeoService {
     }
     const shortlist = [...bestByTerm.values()]
       .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
-      .slice(0, 120);
+      .slice(0, opts?.forceRefresh ? 40 : 60);
 
     const refined = await this.refineSeedCompetition(shortlist, maxCompetition);
 
     this.logger.log(
       JSON.stringify({
         event: "seed_discovery",
-        probes: TOPIC_PROBES.length,
+        probes: selectedProbes.length,
         labsCandidates: candidates.length,
         shortlist: shortlist.length,
         refined: refined.length,
+        forceRefresh: Boolean(opts?.forceRefresh),
         minVolume,
         maxCompetition,
       }),
     );
+
+    if (refined.length === 0) {
+      throw new Error(
+        "No keywords passed volume ≥ 500 and competition ≤ 35% after Ads refine",
+      );
+    }
 
     this.seedDiscoveryCache = {
       expiresAt: Date.now() + ttlMs,

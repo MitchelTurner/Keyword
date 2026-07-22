@@ -447,7 +447,69 @@ export class DataForSeoService {
         ...c,
         volume,
         competition,
+        cpc: row.cpc ?? null,
       });
+    }
+    return out;
+  }
+
+  /**
+   * Lightweight organic SERP snapshot for reality-checking a seed keyword.
+   */
+  async fetchOrganicSerpPreview(
+    keyword: string,
+    opts?: { depth?: number },
+  ): Promise<Array<{ rank: number; domain: string; title: string }>> {
+    const depth = Math.min(Math.max(opts?.depth ?? 5, 1), 10);
+    const payload = [
+      {
+        keyword,
+        location_code: this.locationCode(),
+        language_code: this.languageCode(),
+        device: "desktop",
+        os: "windows",
+        depth,
+      },
+    ];
+
+    const json = await this.request<{
+      tasks: Array<{
+        result?: Array<{
+          items?: Array<{
+            type?: string;
+            rank_absolute?: number;
+            rank_group?: number;
+            domain?: string;
+            title?: string;
+            url?: string;
+          }>;
+        }>;
+      }>;
+    }>("/serp/google/organic/live/regular", payload);
+
+    const items = json.tasks?.[0]?.result?.[0]?.items ?? [];
+    const out: Array<{ rank: number; domain: string; title: string }> = [];
+    for (const item of items) {
+      if (item.type && item.type !== "organic") continue;
+      const domain =
+        item.domain?.trim() ||
+        (item.url
+          ? (() => {
+              try {
+                return new URL(item.url).hostname;
+              } catch {
+                return "";
+              }
+            })()
+          : "");
+      const title = item.title?.trim() ?? "";
+      if (!domain && !title) continue;
+      out.push({
+        rank: item.rank_absolute ?? item.rank_group ?? out.length + 1,
+        domain: domain || "unknown",
+        title: title || domain || "untitled",
+      });
+      if (out.length >= depth) break;
     }
     return out;
   }

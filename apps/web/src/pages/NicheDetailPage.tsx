@@ -1056,6 +1056,33 @@ function OpportunityDrawer({
                 Next: {decision.brief.nextStep}
               </p>
             </div>
+            {(detail.productAngle ||
+              detail.monetizationModel ||
+              detail.wedge) && (
+              <div className="space-y-1.5 rounded-md border border-zinc-800 bg-zinc-950/40 px-2.5 py-2 text-sm">
+                <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                  Build brief
+                </p>
+                {detail.productAngle && (
+                  <p className="text-zinc-200">
+                    <span className="text-zinc-500">Angle · </span>
+                    {detail.productAngle}
+                  </p>
+                )}
+                {detail.monetizationModel && (
+                  <p className="text-zinc-200">
+                    <span className="text-zinc-500">Monetize · </span>
+                    {detail.monetizationModel}
+                  </p>
+                )}
+                {detail.wedge && (
+                  <p className="text-zinc-300">
+                    <span className="text-zinc-500">Wedge · </span>
+                    {detail.wedge}
+                  </p>
+                )}
+              </div>
+            )}
             <div>
               <p className="text-[11px] uppercase tracking-wide text-zinc-500">
                 Demand breakdown

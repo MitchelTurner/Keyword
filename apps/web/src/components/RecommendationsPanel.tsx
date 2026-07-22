@@ -33,14 +33,20 @@ export default function RecommendationsPanel({
   selectedSeed,
   onPick,
   onSearchNew,
+  onReject,
   searching = false,
+  progress,
+  aiReviewError,
 }: {
   niches: RecommendedNiche[];
   keywords: RecommendedKeyword[];
   selectedSeed: string;
   onPick: (term: string) => void;
   onSearchNew?: () => void | Promise<void>;
+  onReject?: (term: string) => void | Promise<void>;
   searching?: boolean;
+  progress?: string;
+  aiReviewError?: string;
 }) {
   const apiSeeds = useMemo(() => {
     const selected = selectedSeed.trim().toLowerCase();
@@ -68,7 +74,7 @@ export default function RecommendationsPanel({
       className="rounded border border-emerald-800/70 bg-emerald-950/30 px-2.5 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-950/55 disabled:cursor-wait disabled:opacity-50"
       title="Run a fresh DataForSEO search, then AI-review for buildable monetizable niches"
     >
-      {searching ? "Searching live API…" : "Search new seeds"}
+      {searching ? "Searching…" : "Search new seeds"}
     </button>
   ) : null;
 
@@ -81,8 +87,11 @@ export default function RecommendationsPanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-zinc-500">
             {searching
-              ? "Searching DataForSEO and AI-reviewing niches — this can take ~20–40s…"
-              : "No buildable niches yet. Click Search new seeds (volume ≥ 500, competition ≤ 35%, then AI filters out professions like “doctor”)."}
+              ? progress ||
+                "Searching DataForSEO and AI-reviewing niches — this can take a minute…"
+              : aiReviewError
+                ? `AI review unavailable — seeds hidden until review works. ${aiReviewError}`
+                : "No buildable niches yet. Click Search new seeds (volume ≥ 500, competition ≤ 35%, then AI filters out professions like “doctor”)."}
           </p>
           {searchButton}
         </div>
@@ -109,7 +118,7 @@ export default function RecommendationsPanel({
       title="Recommended seeds"
       hint={
         searching
-          ? "Searching live API + AI review for a fresh mix…"
+          ? progress || "Searching live API + AI review for a fresh mix…"
           : `${apiSeeds.length} AI-reviewed niches · volume ≥ 500 · competition ≤ 35%`
       }
     >
@@ -153,37 +162,71 @@ export default function RecommendationsPanel({
 
       <ul className="divide-y divide-zinc-800/80 border-y border-zinc-800/80">
         {pageItems.map((k) => (
-          <li key={k.term}>
-            <button
-              type="button"
-              onClick={() => onPick(k.term)}
-              title={k.reason ?? k.term}
-              className={`flex w-full flex-col gap-0.5 px-1 py-2.5 text-left transition hover:bg-zinc-900/70 ${
-                selectedSeed === k.term ? "bg-emerald-950/25" : ""
-              }`}
-            >
-              <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className="text-sm font-medium text-emerald-300">
-                  {k.term}
+          <li key={k.term} className="group">
+            <div className="flex items-start gap-2 px-1 py-2.5">
+              <button
+                type="button"
+                onClick={() => onPick(k.term)}
+                title={k.aiReason ?? k.reason ?? k.term}
+                className={`min-w-0 flex-1 flex-col gap-0.5 text-left transition hover:bg-zinc-900/70 ${
+                  selectedSeed === k.term ? "bg-emerald-950/25" : ""
+                }`}
+              >
+                <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span className="text-sm font-medium text-emerald-300">
+                    {k.term}
+                  </span>
+                  {k.category && (
+                    <span className="text-[11px] uppercase tracking-wide text-zinc-600">
+                      {k.category}
+                    </span>
+                  )}
                 </span>
-                {k.category && (
-                  <span className="text-[11px] uppercase tracking-wide text-zinc-600">
-                    {k.category}
+                <span className="block text-xs text-zinc-500">
+                  <span className="tabular-nums text-zinc-400">
+                    {k.volume != null ? num(k.volume) : "—"}/mo
+                  </span>
+                  <span className="mx-1.5 text-zinc-700">·</span>
+                  <span className="tabular-nums text-zinc-400">
+                    {k.competition != null
+                      ? `${Math.round(k.competition * 100)}% comp`
+                      : "comp n/a"}
+                  </span>
+                  {k.cpc != null && k.cpc > 0 && (
+                    <>
+                      <span className="mx-1.5 text-zinc-700">·</span>
+                      <span className="tabular-nums text-zinc-400">
+                        ${k.cpc.toFixed(2)} CPC
+                      </span>
+                    </>
+                  )}
+                </span>
+                {k.aiReason && (
+                  <span className="mt-0.5 block text-xs leading-snug text-zinc-400">
+                    {k.aiReason}
                   </span>
                 )}
-              </span>
-              <span className="text-xs text-zinc-500">
-                <span className="tabular-nums text-zinc-400">
-                  {k.volume != null ? num(k.volume) : "—"}/mo
-                </span>
-                <span className="mx-1.5 text-zinc-700">·</span>
-                <span className="tabular-nums text-zinc-400">
-                  {k.competition != null
-                    ? `${Math.round(k.competition * 100)}% comp`
-                    : "comp n/a"}
-                </span>
-              </span>
-            </button>
+                {k.serp && k.serp.length > 0 && (
+                  <span className="mt-1 block text-[11px] leading-snug text-zinc-600">
+                    SERP:{" "}
+                    {k.serp
+                      .slice(0, 3)
+                      .map((s) => s.domain)
+                      .join(" · ")}
+                  </span>
+                )}
+              </button>
+              {onReject && (
+                <button
+                  type="button"
+                  onClick={() => void onReject(k.term)}
+                  title="Not buildable for me — hide permanently"
+                  className="shrink-0 rounded border border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-500 opacity-70 transition hover:border-rose-900/60 hover:text-rose-300 group-hover:opacity-100"
+                >
+                  Hide
+                </button>
+              )}
+            </div>
           </li>
         ))}
       </ul>

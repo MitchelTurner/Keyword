@@ -102,6 +102,25 @@ describe("niche pipeline integration (mocked externals)", () => {
         mergeClusterLabels: vi.fn(async (labels: string[]) => ({
           merges: labels.map((canonical) => ({ canonical, aliases: [] })),
         })),
+        reviewThemeBuildAngles: vi.fn(
+          async (
+            themes: Array<{ productDescription: string }>,
+          ) => ({
+            themes: themes.map((t) => ({
+              product_description: t.productDescription,
+              product_angle: "Ship a focused SaaS for this theme",
+              monetization_model: "SaaS subscription",
+              wedge: "Start with a single painful workflow",
+            })),
+          }),
+        ),
+        reviewMonetizableSeeds: vi.fn(async (keywords: string[]) => ({
+          reviews: keywords.map((keyword) => ({
+            keyword,
+            approve: true,
+            reason: "Buildable software niche",
+          })),
+        })),
       })
       .compile();
 

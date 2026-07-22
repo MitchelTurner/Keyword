@@ -6,9 +6,11 @@ import {
   ClaudeKeywordExpandSchema,
   ClaudeMergeSchema,
   ClaudeSeedMonetizationReviewSchema,
+  ClaudeThemeBuildBriefSchema,
   type ClaudeClassification,
   type ClaudeMerge,
   type ClaudeSeedMonetizationReview,
+  type ClaudeThemeBuildBrief,
 } from "@prospector/shared";
 import { CostService } from "../cost/cost.service";
 
@@ -90,6 +92,22 @@ Rules:
 - Include EVERY input keyword exactly once in reviews (match the keyword string)
 - Be strict: when unsure, reject
 - reason: short (under 200 chars)
+- No markdown, no prose outside the JSON`;
+
+const THEME_BUILD_SYSTEM = `You turn keyword research themes into concrete build briefs for a solo founder.
+
+For each theme, propose:
+- product_angle: what website/software to build (1 short sentence)
+- monetization_model: how it makes money (e.g. SaaS subscription, affiliate, lead-gen, freemium, ads+newsletter, digital product)
+- wedge: the narrow first customer/use-case to win
+
+Respond ONLY with JSON:
+{"themes":[{"product_description":string,"product_angle":string,"monetization_model":string,"wedge":string}]}
+
+Rules:
+- Include every input theme exactly once (match product_description)
+- Stay realistic for a solo founder — no enterprise sales teams required on day one
+- Prefer digital products over licensed/in-person services
 - No markdown, no prose outside the JSON`;
 
 @Injectable()
@@ -340,6 +358,77 @@ export class ClaudeService {
     });
 
     return { reviews };
+  }
+
+  /**
+   * Second-pass brief for scored themes: product angle, monetization, wedge.
+   */
+  async reviewThemeBuildAngles(
+    themes: Array<{
+      productDescription: string;
+      buyerType: string;
+      intent: string;
+      totalVolume: number;
+      avgCpc: number;
+      avgCompetition: number;
+      painSeverity: number;
+    }>,
+    nicheId?: string,
+  ): Promise<ClaudeThemeBuildBrief> {
+    const payload = themes.slice(0, 24).map((t) => ({
+      product_description: t.productDescription,
+      buyer_type: t.buyerType,
+      intent: t.intent,
+      total_volume: t.totalVolume,
+      avg_cpc: t.avgCpc,
+      avg_competition: t.avgCompetition,
+      pain_severity: t.painSeverity,
+    }));
+
+    if (payload.length === 0) return { themes: [] };
+
+    const user = `Write build briefs for these themes:\n${JSON.stringify(payload)}`;
+
+    const tryParse = (raw: string) => {
+      try {
+        return ClaudeThemeBuildBriefSchema.safeParse(JSON.parse(raw));
+      } catch (err) {
+        return {
+          success: false as const,
+          error: {
+            message:
+              err instanceof Error ? err.message : "JSON parse failed",
+          },
+        };
+      }
+    };
+
+    let text = await this.complete(THEME_BUILD_SYSTEM, user, nicheId);
+    let parsed = tryParse(text);
+
+    if (!parsed.success) {
+      this.logger.warn(`Claude theme build brief parse failed, retrying once`);
+      text = await this.complete(
+        THEME_BUILD_SYSTEM,
+        `${user}\n\nPrevious response failed validation: ${parsed.error.message}. Return corrected JSON only.`,
+        nicheId,
+      );
+      parsed = tryParse(text);
+      if (!parsed.success) {
+        throw new Error(
+          `Claude theme build brief JSON invalid: ${parsed.error.message}`,
+        );
+      }
+    }
+
+    const allowed = new Set(
+      payload.map((t) => t.product_description.trim().toLowerCase()),
+    );
+    return {
+      themes: parsed.data.themes.filter((t) =>
+        allowed.has(t.product_description.trim().toLowerCase()),
+      ),
+    };
   }
 
   async mergeClusterLabels(

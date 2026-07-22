@@ -152,6 +152,28 @@ export type ClaudeSeedMonetizationReview = z.infer<
   typeof ClaudeSeedMonetizationReviewSchema
 >;
 
+/** Second-pass AI brief: buildable product angle + monetization for a theme. */
+export const ClaudeThemeBuildBriefSchema = z.object({
+  themes: z
+    .array(
+      z.object({
+        product_description: z.string().trim().min(1),
+        product_angle: z.string().trim().min(1).max(280),
+        monetization_model: z.string().trim().min(1).max(80),
+        wedge: z.string().trim().min(1).max(280),
+      }),
+    )
+    .max(40),
+});
+export type ClaudeThemeBuildBrief = z.infer<typeof ClaudeThemeBuildBriefSchema>;
+
+/** Permanently hide a recommended seed from the suggestions panel. */
+export const RejectSeedSchema = z.object({
+  term: z.string().trim().min(1).max(120),
+  reason: z.string().trim().max(280).optional(),
+});
+export type RejectSeedDto = z.infer<typeof RejectSeedSchema>;
+
 /** DataForSEO wrapper envelope helpers */
 export const DataForSeoTaskMetaSchema = z.object({
   status_code: z.number(),

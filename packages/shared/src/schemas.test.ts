@@ -3,6 +3,8 @@ import {
   ClaudeClassificationSchema,
   ClaudeKeywordExpandSchema,
   ClaudeSeedMonetizationReviewSchema,
+  ClaudeThemeBuildBriefSchema,
+  RejectSeedSchema,
   CreateNicheSchema,
   SearchSeedKeywordsSchema,
   SearchVolumeItemSchema,
@@ -189,5 +191,27 @@ describe("ClaudeSeedMonetizationReviewSchema", () => {
         reviews: [{ keyword: "x", approve: true, reason: "  " }],
       }),
     ).toThrow();
+  });
+});
+
+describe("ClaudeThemeBuildBriefSchema", () => {
+  it("parses theme build briefs", () => {
+    const parsed = ClaudeThemeBuildBriefSchema.parse({
+      themes: [
+        {
+          product_description: "Invoice OCR software",
+          product_angle: "SMB invoice scanning SaaS",
+          monetization_model: "SaaS subscription",
+          wedge: "Start with freelancers who hate QuickBooks receipts",
+        },
+      ],
+    });
+    expect(parsed.themes[0]?.monetization_model).toBe("SaaS subscription");
+  });
+});
+
+describe("RejectSeedSchema", () => {
+  it("accepts a term", () => {
+    expect(RejectSeedSchema.parse({ term: " doctor " }).term).toBe("doctor");
   });
 });

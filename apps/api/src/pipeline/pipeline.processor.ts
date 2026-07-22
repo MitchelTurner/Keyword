@@ -603,9 +603,74 @@ export class PipelineProcessor {
       });
     }
 
+    // Second AI pass: product angle + monetization + wedge for scored themes.
+    try {
+      await this.enrichBuildBriefs(nicheId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Theme build-brief enrichment failed for ${nicheId}: ${message}`,
+      );
+    }
+
     await this.prisma.niche.update({
       where: { id: nicheId },
       data: { status: "DONE", error: null },
     });
+  }
+
+  private async enrichBuildBriefs(nicheId: string) {
+    const opportunities = await this.prisma.opportunity.findMany({
+      where: { nicheId },
+      orderBy: { demandScore: "desc" },
+      take: 16,
+      select: {
+        id: true,
+        productDescription: true,
+        buyerType: true,
+        intent: true,
+        totalVolume: true,
+        avgCpc: true,
+        avgCompetition: true,
+        painSeverity: true,
+      },
+    });
+    if (opportunities.length === 0) return;
+
+    const brief = await this.claude.reviewThemeBuildAngles(
+      opportunities.map((o) => ({
+        productDescription: o.productDescription,
+        buyerType: o.buyerType,
+        intent: o.intent,
+        totalVolume: o.totalVolume,
+        avgCpc: o.avgCpc,
+        avgCompetition: o.avgCompetition,
+        painSeverity: o.painSeverity,
+      })),
+      nicheId,
+    );
+
+    const byLabel = new Map(
+      brief.themes.map(
+        (t) =>
+          [
+            t.product_description.trim().toLowerCase(),
+            t,
+          ] as const,
+      ),
+    );
+
+    for (const opp of opportunities) {
+      const t = byLabel.get(opp.productDescription.trim().toLowerCase());
+      if (!t) continue;
+      await this.prisma.opportunity.update({
+        where: { id: opp.id },
+        data: {
+          productAngle: t.product_angle,
+          monetizationModel: t.monetization_model,
+          wedge: t.wedge,
+        },
+      });
+    }
   }
 }

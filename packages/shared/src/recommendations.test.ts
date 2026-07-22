@@ -24,6 +24,18 @@ describe("recommendations", () => {
     expect(lowComp).toBeGreaterThan(highComp);
   });
 
+  it("boosts score for higher CPC at equal volume and competition", () => {
+    const cheap = seedOpportunityScore(2000, 0.2, 0.5);
+    const pricey = seedOpportunityScore(2000, 0.2, 8);
+    expect(pricey).toBeGreaterThan(cheap);
+  });
+
+  it("biases topic probes toward software and tools", () => {
+    const seeds = TOPIC_PROBES.map((p) => p.seed.toLowerCase()).join(" ");
+    expect(seeds).toMatch(/software|app|tool|calculator|platform/);
+    expect(seeds).not.toMatch(/lawyer|plumber|dentist|doctor/);
+  });
+
   it("diversifies API seeds across categories", () => {
     const picks = diversifyApiSeedRecommendations(
       [
@@ -74,20 +86,20 @@ describe("recommendations", () => {
     expect(picks.every((p) => isSeedablePhrase(p.term))).toBe(true);
   });
 
-  it("never recommends crowded probe head terms like wedding photography", () => {
+  it("never recommends crowded probe head terms like invoice software", () => {
     const picks = diversifyApiSeedRecommendations(
       [
         {
-          term: "wedding photography",
-          category: "Events",
-          probe: "wedding photography",
+          term: "invoice software",
+          category: "SaaS",
+          probe: "invoice software",
           volume: 12000,
           competition: 0.2,
         },
         {
-          term: "elopement photo packages",
-          category: "Events",
-          probe: "wedding photography",
+          term: "freelance invoice templates",
+          category: "SaaS",
+          probe: "invoice software",
           volume: 900,
           competition: 0.18,
         },
@@ -96,9 +108,9 @@ describe("recommendations", () => {
       10,
     );
     expect(
-      picks.some((p) => p.term.toLowerCase() === "wedding photography"),
+      picks.some((p) => p.term.toLowerCase() === "invoice software"),
     ).toBe(false);
-    expect(picks.map((p) => p.term)).toContain("elopement photo packages");
+    expect(picks.map((p) => p.term)).toContain("freelance invoice templates");
   });
 
   it("detects near-duplicate phrases", () => {

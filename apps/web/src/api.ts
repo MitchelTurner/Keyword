@@ -90,6 +90,9 @@ export type OpportunityRow = {
   intent: string;
   painSeverity: number;
   reasoning: string;
+  productAngle?: string | null;
+  monetizationModel?: string | null;
+  wedge?: string | null;
   totalVolume: number;
   avgCpc: number;
   avgCompetition: number;
@@ -183,6 +186,12 @@ export type RecommendedNiche = {
   alreadyRun: boolean;
 };
 
+export type SerpPreviewItem = {
+  rank: number;
+  domain: string;
+  title: string;
+};
+
 export type RecommendedKeyword = {
   term: string;
   source: "api" | "curated" | "follow_on";
@@ -190,15 +199,31 @@ export type RecommendedKeyword = {
   nicheSeed?: string;
   category?: string;
   reason?: string;
+  aiReason?: string;
   volume?: number | null;
   competition?: number | null;
+  cpc?: number | null;
   score?: number;
+  serp?: SerpPreviewItem[];
 };
 
 export type RecommendationsResponse = {
   niches: RecommendedNiche[];
   keywords: RecommendedKeyword[];
   followOns: RecommendedKeyword[];
+  aiReviewError?: string;
+  searching?: boolean;
+  jobId?: string | null;
+  progress?: string;
+};
+
+export type RecommendationsJob = {
+  jobId: string | null;
+  status: "idle" | "running" | "done" | "error";
+  progress: string;
+  error: string | null;
+  updatedAt: number;
+  result: RecommendationsResponse | null;
 };
 
 export type SeedSearchResponse = {
@@ -225,6 +250,18 @@ export const api = {
           method: "POST",
         })
       : request<RecommendationsResponse>("/recommendations"),
+  recommendationsJob: () =>
+    request<RecommendationsJob>("/recommendations/job"),
+  rejectSeed: (term: string, reason?: string) =>
+    request<{ ok: true; term: string }>("/recommendations/reject", {
+      method: "POST",
+      body: JSON.stringify({ term, reason }),
+    }),
+  unrejectSeed: (term: string) =>
+    request<{ ok: true; term: string }>(
+      `/recommendations/reject/${encodeURIComponent(term)}`,
+      { method: "DELETE" },
+    ),
   searchSeeds: (params: {
     q?: string;
     minVolume?: number;

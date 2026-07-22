@@ -62,6 +62,12 @@ model Opportunity {
   intent             String
   painSeverity       Int
   reasoning          String
+  /// AI second-pass: concrete product you could ship
+  productAngle       String?
+  /// AI second-pass: e.g. SaaS subscription, affiliate, lead-gen
+  monetizationModel  String?
+  /// AI second-pass: narrow entry wedge
+  wedge              String?
   totalVolume        Int
   avgCpc             Float
   avgCompetition     Float
@@ -77,6 +83,16 @@ model Opportunity {
 
   @@index([nicheId])
   @@index([pinned])
+}
+
+/// Seeds the operator permanently dismissed from Recommended seeds.
+model RejectedSeed {
+  id        String   @id @default(cuid())
+  term      String   @unique
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model ApiCostLog {

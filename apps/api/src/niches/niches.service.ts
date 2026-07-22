@@ -10,7 +10,10 @@ import {
   buildRecommendations,
   estimateRunCost,
   searchSeedKeywords,
+  type ApiSeedCandidate,
   type CreateNicheDto,
+  type RecommendationKeyword,
+  type RejectSeedDto,
   type SearchSeedKeywordsDto,
   type TrendAnalysis,
   type TrendPoint,
@@ -18,6 +21,7 @@ import {
   type UpdateOpportunityDto,
 } from "@prospector/shared";
 import { Prisma } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { PipelineService } from "../pipeline/pipeline.service";
 import { CostService } from "../cost/cost.service";
@@ -29,9 +33,20 @@ import {
   parseRubricConfig,
 } from "./decision";
 
-type ApiSeedCandidate = Awaited<
-  ReturnType<DataForSeoService["discoverRecommendedSeeds"]>
->[number];
+export type RecommendationsPayload = ReturnType<typeof buildRecommendations> & {
+  aiReviewError?: string;
+  searching?: boolean;
+  jobId?: string | null;
+};
+
+type SeedSearchJob = {
+  id: string;
+  status: "idle" | "running" | "done" | "error";
+  progress: string;
+  error?: string;
+  result?: RecommendationsPayload;
+  updatedAt: number;
+};
 
 function csvEscape(value: string | number | null | undefined): string {
   if (value == null) return "";
@@ -60,8 +75,15 @@ export class NichesService {
   private monetizeReviewCache: {
     key: string;
     expiresAt: number;
-    approved: Set<string>;
+    reasons: Map<string, string>;
   } | null = null;
+
+  private seedJob: SeedSearchJob = {
+    id: "",
+    status: "idle",
+    progress: "",
+    updatedAt: Date.now(),
+  };
 
   constructor(
     private readonly prisma: PrismaService,
@@ -122,6 +144,9 @@ export class NichesService {
       intent: string;
       painSeverity: number;
       reasoning: string;
+      productAngle?: string | null;
+      monetizationModel?: string | null;
+      wedge?: string | null;
       totalVolume: number;
       avgCpc: number;
       avgCompetition: number;
@@ -154,6 +179,9 @@ export class NichesService {
       intent: o.intent,
       painSeverity: o.painSeverity,
       reasoning: o.reasoning,
+      productAngle: o.productAngle ?? null,
+      monetizationModel: o.monetizationModel ?? null,
+      wedge: o.wedge ?? null,
       totalVolume: o.totalVolume,
       avgCpc: o.avgCpc,
       avgCompetition: o.avgCompetition,
@@ -393,46 +421,221 @@ export class NichesService {
   }
 
   async recommendations(opts: { forceRefresh?: boolean } = {}) {
+    // Legacy ?refresh=true still works but prefers the async job path.
+    if (opts.forceRefresh) {
+      return this.startRecommendationsRefresh();
+    }
+
+    if (this.seedJob.status === "running") {
+      return {
+        niches: this.seedJob.result?.niches ?? [],
+        keywords: this.seedJob.result?.keywords ?? [],
+        followOns: this.seedJob.result?.followOns ?? [],
+        aiReviewError: this.seedJob.result?.aiReviewError,
+        searching: true,
+        jobId: this.seedJob.id,
+        progress: this.seedJob.progress,
+      };
+    }
+
+    if (this.seedJob.status === "done" && this.seedJob.result) {
+      return {
+        ...this.seedJob.result,
+        searching: false,
+        jobId: this.seedJob.id,
+      };
+    }
+
+    return this.buildRecommendationsPayload({
+      forceRefresh: false,
+      attachSerp: false,
+    });
+  }
+
+  /** Start a background seed search (POST /recommendations/refresh). */
+  startRecommendationsRefresh() {
+    if (this.seedJob.status === "running") {
+      return {
+        niches: this.seedJob.result?.niches ?? [],
+        keywords: this.seedJob.result?.keywords ?? [],
+        followOns: this.seedJob.result?.followOns ?? [],
+        searching: true,
+        jobId: this.seedJob.id,
+        progress: this.seedJob.progress,
+      };
+    }
+
+    const id = randomUUID();
+    this.seedJob = {
+      id,
+      status: "running",
+      progress: "Discovering keywords…",
+      result: this.seedJob.result,
+      updatedAt: Date.now(),
+    };
+
+    void this.runRecommendationsRefresh(id);
+
+    return {
+      niches: this.seedJob.result?.niches ?? [],
+      keywords: this.seedJob.result?.keywords ?? [],
+      followOns: this.seedJob.result?.followOns ?? [],
+      searching: true,
+      jobId: id,
+      progress: this.seedJob.progress,
+    };
+  }
+
+  getRecommendationsJob() {
+    return {
+      jobId: this.seedJob.id || null,
+      status: this.seedJob.status,
+      progress: this.seedJob.progress,
+      error: this.seedJob.error ?? null,
+      updatedAt: this.seedJob.updatedAt,
+      result:
+        this.seedJob.status === "done" ? (this.seedJob.result ?? null) : null,
+    };
+  }
+
+  private async runRecommendationsRefresh(jobId: string) {
+    try {
+      this.patchSeedJob(jobId, { progress: "Discovering keywords…" });
+      const result = await this.buildRecommendationsPayload({
+        forceRefresh: true,
+        attachSerp: true,
+        onProgress: (progress) => this.patchSeedJob(jobId, { progress }),
+      });
+      if (this.seedJob.id !== jobId) return;
+      this.seedJob = {
+        id: jobId,
+        status: "done",
+        progress: "Done",
+        result,
+        updatedAt: Date.now(),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Async seed refresh failed: ${message}`);
+      if (this.seedJob.id !== jobId) return;
+      this.seedJob = {
+        id: jobId,
+        status: "error",
+        progress: "Failed",
+        error: message,
+        updatedAt: Date.now(),
+      };
+    }
+  }
+
+  private patchSeedJob(jobId: string, patch: Partial<SeedSearchJob>) {
+    if (this.seedJob.id !== jobId || this.seedJob.status !== "running") return;
+    this.seedJob = { ...this.seedJob, ...patch, updatedAt: Date.now() };
+  }
+
+  private async buildRecommendationsPayload(opts: {
+    forceRefresh: boolean;
+    attachSerp: boolean;
+    onProgress?: (progress: string) => void;
+  }): Promise<RecommendationsPayload> {
     const niches = await this.prisma.niche.findMany({
       select: { seedTerm: true },
     });
     const existingSeeds = niches.map((n) => n.seedTerm);
 
-    // Live DataForSEO discovery across diverse topic probes (cached).
+    const rejected = await this.prisma.rejectedSeed.findMany({
+      select: { term: true },
+    });
+    const rejectedSet = new Set(
+      rejected.map((r) => r.term.trim().toLowerCase()),
+    );
+
     let apiCandidates: ApiSeedCandidate[] = [];
+    let aiReviewError: string | undefined;
+
     try {
+      opts.onProgress?.("Querying DataForSEO…");
       apiCandidates = await this.dataForSeo.discoverRecommendedSeeds({
         forceRefresh: opts.forceRefresh,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Live seed discovery failed: ${message}`);
-      // On explicit "Search new seeds", surface the failure to the UI.
       if (opts.forceRefresh) {
         throw new BadRequestException(`Seed search failed: ${message}`);
       }
-      // Cold load: fall back to cache if we have one from a prior success.
       apiCandidates = [];
     }
 
-    // AI gate: keep only seeds suitable for a buildable, monetizable product.
+    apiCandidates = apiCandidates.filter(
+      (c) => !rejectedSet.has(c.term.trim().toLowerCase()),
+    );
+
+    // AI gate — fail closed: never surface unreviewed volume/comp seeds.
     if (apiCandidates.length > 0) {
       try {
+        opts.onProgress?.("AI-reviewing for buildable niches…");
         apiCandidates = await this.filterMonetizableSeeds(
           apiCandidates,
-          Boolean(opts.forceRefresh),
+          opts.forceRefresh,
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.logger.warn(`AI monetization review failed: ${message}`);
-        // Fail open so volume/competition seeds still surface if Claude is down.
+        aiReviewError = message;
+        apiCandidates = [];
+        if (opts.forceRefresh) {
+          throw new BadRequestException(
+            `AI review unavailable — seeds not shown without review: ${message}`,
+          );
+        }
       }
     }
 
-    return buildRecommendations({
+    apiCandidates = apiCandidates.filter(
+      (c) => !rejectedSet.has(c.term.trim().toLowerCase()),
+    );
+
+    opts.onProgress?.("Ranking recommendations…");
+    const built = buildRecommendations({
       existingSeeds,
       apiCandidates,
-      shuffle: Boolean(opts.forceRefresh),
+      shuffle: opts.forceRefresh,
+    });
+
+    let keywords = built.keywords.filter(
+      (k) => !rejectedSet.has(k.term.trim().toLowerCase()),
+    );
+
+    if (opts.attachSerp && keywords.length > 0) {
+      opts.onProgress?.("Checking SERP for top picks…");
+      keywords = await this.attachSerpPreviews(keywords, 5);
+    }
+
+    return {
+      ...built,
+      keywords,
+      followOns: keywords,
+      aiReviewError,
+      searching: false,
+      jobId: this.seedJob.id || null,
+    };
+  }
+
+  private async attachSerpPreviews(
+    keywords: RecommendationKeyword[],
+    limit: number,
+  ): Promise<RecommendationKeyword[]> {
+    const top = keywords.slice(0, limit);
+    const settled = await Promise.allSettled(
+      top.map((k) => this.dataForSeo.fetchOrganicSerpPreview(k.term, { depth: 5 })),
+    );
+
+    return keywords.map((k, idx) => {
+      if (idx >= top.length) return k;
+      const result = settled[idx];
+      if (!result || result.status !== "fulfilled") return k;
+      return { ...k, serp: result.value };
     });
   }
 
@@ -456,26 +659,33 @@ export class NichesService {
       this.monetizeReviewCache.key === key &&
       this.monetizeReviewCache.expiresAt > Date.now()
     ) {
-      return candidates.filter((c) =>
-        this.monetizeReviewCache!.approved.has(c.term.trim().toLowerCase()),
-      );
+      return candidates
+        .filter((c) =>
+          this.monetizeReviewCache!.reasons.has(c.term.trim().toLowerCase()),
+        )
+        .map((c) => ({
+          ...c,
+          aiReason:
+            this.monetizeReviewCache!.reasons.get(c.term.trim().toLowerCase()) ??
+            c.aiReason,
+        }));
     }
 
     const review = await this.claude.reviewMonetizableSeeds(
       candidates.map((c) => c.term),
     );
-    const approved = new Set(
-      review.reviews
-        .filter((r) => r.approve)
-        .map((r) => r.keyword.trim().toLowerCase()),
-    );
+    const reasons = new Map<string, string>();
+    for (const r of review.reviews) {
+      if (!r.approve) continue;
+      reasons.set(r.keyword.trim().toLowerCase(), r.reason);
+    }
 
     this.logger.log(
       JSON.stringify({
         event: "seed_monetize_review",
         input: candidates.length,
-        approved: approved.size,
-        rejected: candidates.length - approved.size,
+        approved: reasons.size,
+        rejected: candidates.length - reasons.size,
         forceRefresh,
       }),
     );
@@ -483,12 +693,53 @@ export class NichesService {
     this.monetizeReviewCache = {
       key,
       expiresAt: Date.now() + ttlMs,
-      approved,
+      reasons,
     };
 
-    return candidates.filter((c) =>
-      approved.has(c.term.trim().toLowerCase()),
-    );
+    return candidates
+      .filter((c) => reasons.has(c.term.trim().toLowerCase()))
+      .map((c) => ({
+        ...c,
+        aiReason: reasons.get(c.term.trim().toLowerCase()) ?? c.aiReason,
+      }));
+  }
+
+  async rejectSeed(dto: RejectSeedDto) {
+    const term = dto.term.trim().replace(/\s+/g, " ");
+    const key = term.toLowerCase();
+    await this.prisma.rejectedSeed.upsert({
+      where: { term: key },
+      create: { term: key, reason: dto.reason?.trim() || null },
+      update: { reason: dto.reason?.trim() || null },
+    });
+
+    // Drop from latest job result immediately.
+    if (this.seedJob.result) {
+      const keywords = this.seedJob.result.keywords.filter(
+        (k) => k.term.trim().toLowerCase() !== key,
+      );
+      this.seedJob.result = {
+        ...this.seedJob.result,
+        keywords,
+        followOns: keywords,
+      };
+    }
+
+    return { ok: true as const, term: key };
+  }
+
+  async unrejectSeed(term: string) {
+    const key = term.trim().toLowerCase();
+    await this.prisma.rejectedSeed.deleteMany({ where: { term: key } });
+    return { ok: true as const, term: key };
+  }
+
+  async listRejectedSeeds() {
+    const items = await this.prisma.rejectedSeed.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    return { count: items.length, items };
   }
 
   /**

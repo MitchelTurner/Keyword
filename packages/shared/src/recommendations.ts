@@ -161,33 +161,39 @@ export const CURATED_NICHES: CuratedNiche[] = [
 ];
 
 /**
- * Probe seeds spanning widely different markets for live API discovery.
- * One probe per topic so recommendations cover the most ground.
+ * Probe seeds biased toward buildable software / tools / content niches
+ * (not licensed professions or pure local services).
  */
 export const TOPIC_PROBES: Array<{
   id: string;
   category: string;
   seed: string;
 }> = [
-  { id: "fitness", category: "Fitness", seed: "running shoes" },
-  { id: "legal", category: "Legal", seed: "personal injury lawyer" },
-  { id: "energy", category: "Energy", seed: "solar panels" },
-  { id: "pets", category: "Pets", seed: "dog training" },
-  { id: "finance", category: "Finance", seed: "credit repair" },
-  { id: "healthcare", category: "Healthcare", seed: "dental implants" },
-  { id: "events", category: "Events", seed: "wedding photography" },
-  { id: "property", category: "Property", seed: "HOA management" },
-  { id: "food", category: "Food", seed: "meal prep" },
-  { id: "travel", category: "Travel", seed: "rv rental" },
-  { id: "education", category: "Education", seed: "online tutoring" },
-  { id: "beauty", category: "Beauty", seed: "lash extensions" },
-  { id: "automotive", category: "Automotive", seed: "ceramic coating cars" },
-  { id: "parenting", category: "Parenting", seed: "sleep training baby" },
-  { id: "trades", category: "Trades", seed: "emergency plumber" },
-  { id: "agriculture", category: "Agriculture", seed: "hydroponic gardening" },
-  { id: "music", category: "Music", seed: "guitar lessons" },
-  { id: "outdoors", category: "Outdoors", seed: "kayak fishing" },
+  { id: "billing", category: "SaaS", seed: "invoice software" },
+  { id: "crm", category: "SaaS", seed: "crm software" },
+  { id: "scheduling", category: "SaaS", seed: "appointment scheduling software" },
+  { id: "habits", category: "Productivity", seed: "habit tracker app" },
+  { id: "meal", category: "Food tech", seed: "meal planning app" },
+  { id: "budget", category: "Fintech", seed: "budget tracker app" },
+  { id: "hoa", category: "Proptech", seed: "hoa management software" },
+  { id: "dental", category: "Health tech", seed: "dental practice software" },
+  { id: "legal-tech", category: "Legal tech", seed: "law firm billing software" },
+  { id: "ecommerce", category: "Ecommerce", seed: "shopify inventory app" },
+  { id: "education", category: "Edtech", seed: "online course platform" },
+  { id: "content", category: "Content", seed: "newsletter tools" },
+  { id: "seo", category: "Marketing", seed: "keyword research tool" },
+  { id: "hr", category: "HR tech", seed: "employee scheduling software" },
+  { id: "pets", category: "Pets", seed: "pet sitting software" },
+  { id: "fitness", category: "Fitness tech", seed: "workout planner app" },
+  { id: "rentals", category: "Proptech", seed: "rental property management software" },
+  { id: "tools", category: "Tools", seed: "mortgage calculator" },
 ];
+
+export type SerpPreviewItem = {
+  rank: number;
+  domain: string;
+  title: string;
+};
 
 export type RecommendationKeyword = {
   term: string;
@@ -196,10 +202,15 @@ export type RecommendationKeyword = {
   nicheSeed?: string;
   category?: string;
   reason?: string;
+  /** Why Claude approved this seed for a buildable monetizable niche. */
+  aiReason?: string;
   volume?: number | null;
   competition?: number | null;
-  /** Higher = better seed opportunity (volume × low competition). */
+  cpc?: number | null;
+  /** Higher = better seed opportunity (volume × low competition × CPC). */
   score?: number;
+  /** Lightweight organic SERP snapshot for reality-checking the niche. */
+  serp?: SerpPreviewItem[];
 };
 
 export type FollowOnCandidate = {
@@ -216,6 +227,8 @@ export type ApiSeedCandidate = {
   probe: string;
   volume: number | null;
   competition: number | null;
+  cpc?: number | null;
+  aiReason?: string;
 };
 
 /** Soft ceiling — terms above this are usually too crowded to recommend as seeds. */
@@ -250,12 +263,13 @@ export function isSeedablePhrase(term: string): boolean {
 }
 
 /**
- * Rank seed opportunity: high search volume + low competition.
- * Missing competition is treated as mid (0.55) so volume still matters.
+ * Rank seed opportunity: high volume + low competition + commercial CPC.
+ * Missing competition is treated as mid (0.55); missing CPC as $0 (no boost).
  */
 export function seedOpportunityScore(
   volume: number | null | undefined,
   competition: number | null | undefined,
+  cpc?: number | null | undefined,
 ): number {
   const vol = Math.max(0, volume ?? 0);
   if (vol <= 0) return 0;
@@ -263,7 +277,8 @@ export function seedOpportunityScore(
     competition == null
       ? 0.55
       : Math.min(1, Math.max(0, competition));
-  return Math.log10(vol + 1) * (1.05 - comp);
+  const cpcBoost = 1 + Math.log10(1 + Math.max(0, cpc ?? 0));
+  return Math.log10(vol + 1) * (1.05 - comp) * cpcBoost;
 }
 
 function competitionLabel(competition: number | null | undefined): string {
@@ -335,7 +350,7 @@ export function diversifyApiSeedRecommendations(
     ) {
       continue;
     }
-    const score = seedOpportunityScore(c.volume, c.competition);
+    const score = seedOpportunityScore(c.volume, c.competition, c.cpc);
     const list = byCategory.get(c.category) ?? [];
     list.push({ ...c, score });
     byCategory.set(c.category, list);
@@ -374,6 +389,8 @@ export function diversifyApiSeedRecommendations(
         const key = normalizeTerm(c.term);
         if (pickedTerms.some((t) => phrasesTooSimilar(t, c.term))) continue;
         if (picked.some((p) => normalizeTerm(p.term) === key)) continue;
+        const cpcBit =
+          c.cpc != null && c.cpc > 0 ? ` · $${c.cpc.toFixed(2)} CPC` : "";
         picked.push({
           term: c.term,
           source: "api",
@@ -381,8 +398,10 @@ export function diversifyApiSeedRecommendations(
           category: c.category,
           volume: c.volume,
           competition: c.competition,
+          cpc: c.cpc ?? null,
           score: c.score,
-          reason: `${c.category} · ${competitionLabel(c.competition)} · ${Math.round(c.volume ?? 0).toLocaleString()}/mo`,
+          aiReason: c.aiReason,
+          reason: `${c.category} · ${competitionLabel(c.competition)} · ${Math.round(c.volume ?? 0).toLocaleString()}/mo${cpcBit}`,
         });
         pickedTerms.push(c.term);
         added = true;
@@ -422,7 +441,7 @@ export function searchSeedKeywords(
     if (volume < minVolume) continue;
     if (c.competition == null || c.competition > maxCompetition) continue;
 
-    const score = seedOpportunityScore(c.volume, c.competition);
+    const score = seedOpportunityScore(c.volume, c.competition, null);
     const prev = best.get(key);
     if (!prev || score > prev.score) {
       best.set(key, { ...c, score });

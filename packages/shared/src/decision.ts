@@ -68,7 +68,8 @@ export function explainDemandScore(input: {
 }): DemandBreakdown {
   const volumeFactor = Math.log10(input.totalVolume + 1);
   const cpcFactor = input.avgCpc;
-  const competitionFactor = 1 + input.avgCompetition;
+  const competitionFactor =
+    1.05 - Math.min(1, Math.max(0, input.avgCompetition));
   const demandScore = volumeFactor * cpcFactor * competitionFactor;
 
   const drivers: string[] = [];

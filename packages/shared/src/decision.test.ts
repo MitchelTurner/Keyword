@@ -13,7 +13,7 @@ describe("explainDemandScore", () => {
       avgCpc: 10,
       avgCompetition: 0.5,
     });
-    expect(b.demandScore).toBeCloseTo(Math.log10(1000) * 10 * 1.5, 2);
+    expect(b.demandScore).toBeCloseTo(Math.log10(1000) * 10 * (1.05 - 0.5), 2);
     expect(b.drivers.length).toBeGreaterThan(0);
   });
 });

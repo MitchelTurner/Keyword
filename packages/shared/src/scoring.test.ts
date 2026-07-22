@@ -42,8 +42,20 @@ describe("scoreOpportunity", () => {
     expect(scored.annualPriceFloor).toBeCloseTo(50);
     expect(scored.monthlyPriceFloor).toBeCloseTo(50 / 12);
 
-    const base = Math.log10(2000 + 1) * 4 * (1 + 0.5);
+    const base = Math.log10(2000 + 1) * 4 * (1.05 - 0.5);
     expect(scored.demandScore).toBeCloseTo(base);
+  });
+
+  it("ranks lower competition higher at equal volume and CPC", () => {
+    const low = scoreOpportunity(
+      [{ searchVolume: 1000, cpc: 5, competition: 0.2 }],
+      { convRate: 0.02, ltvCacRatio: 3 },
+    );
+    const high = scoreOpportunity(
+      [{ searchVolume: 1000, cpc: 5, competition: 0.8 }],
+      { convRate: 0.02, ltvCacRatio: 3 },
+    );
+    expect(low.demandScore).toBeGreaterThan(high.demandScore);
   });
 
   it("excludes null-volume keywords from totals", () => {

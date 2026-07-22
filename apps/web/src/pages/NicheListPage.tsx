@@ -32,6 +32,7 @@ export default function NicheListPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [searchingSeeds, setSearchingSeeds] = useState(false);
+  const [searchProgress, setSearchProgress] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -115,18 +116,37 @@ export default function NicheListPage() {
 
   async function onSearchNewSeeds() {
     setSearchingSeeds(true);
+    setSearchProgress("Starting search…");
     setError(null);
     try {
-      const next = await api.recommendations({ refresh: true });
-      setRecs(next);
-      if (next.keywords.length === 0) {
-        setError(
-          "Search finished but found no seeds under the volume/competition filters. Try again.",
-        );
+      const started = await api.recommendations({ refresh: true });
+      setRecs(started);
+      setSearchProgress(started.progress || "Searching…");
+
+      // Poll async job until done/error (avoids proxy timeouts on long DFS runs).
+      for (let i = 0; i < 90; i++) {
+        await new Promise((r) => window.setTimeout(r, 2000));
+        const job = await api.recommendationsJob();
+        setSearchProgress(job.progress || undefined);
+        if (job.status === "done") {
+          if (job.result) setRecs(job.result);
+          else setRecs(await api.recommendations());
+          if ((job.result?.keywords.length ?? 0) === 0) {
+            setError(
+              job.result?.aiReviewError
+                ? `AI review blocked results: ${job.result.aiReviewError}`
+                : "Search finished but found no buildable seeds. Try again.",
+            );
+          }
+          return;
+        }
+        if (job.status === "error") {
+          throw new Error(job.error || "Seed search failed");
+        }
       }
+      throw new Error("Seed search timed out — try again");
     } catch (err) {
       let message = String(err);
-      // Nest BadRequest body is often JSON — pull the readable message out.
       try {
         const parsed = JSON.parse(message) as {
           message?: string | string[];
@@ -137,9 +157,25 @@ export default function NicheListPage() {
       } catch {
         /* keep raw */
       }
-      setError(message);
+      setError(message.replace(/^Error:\s*/, ""));
     } finally {
       setSearchingSeeds(false);
+      setSearchProgress(undefined);
+    }
+  }
+
+  async function onRejectSeed(term: string) {
+    try {
+      await api.rejectSeed(term);
+      setRecs((prev) => {
+        if (!prev) return prev;
+        const keywords = prev.keywords.filter(
+          (k) => k.term.trim().toLowerCase() !== term.trim().toLowerCase(),
+        );
+        return { ...prev, keywords, followOns: keywords };
+      });
+    } catch (err) {
+      setError(String(err));
     }
   }
 
@@ -203,7 +239,10 @@ export default function NicheListPage() {
         selectedSeed={seedTerm}
         onPick={setSeedTerm}
         onSearchNew={onSearchNewSeeds}
+        onReject={onRejectSeed}
         searching={searchingSeeds}
+        progress={searchProgress}
+        aiReviewError={recs?.aiReviewError}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">

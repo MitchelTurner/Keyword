@@ -64,8 +64,10 @@ export function scoreOpportunity(
   const annualPriceFloor = impliedCac / ltvCacRatio;
   const monthlyPriceFloor = annualPriceFloor / 12;
 
+  // Reward commercial volume and CPC; prefer lower competition (winnability).
+  const competitionFactor = 1.05 - Math.min(1, Math.max(0, avgCompetition));
   const demandScore =
-    Math.log10(totalVolume + 1) * avgCpc * (1 + avgCompetition);
+    Math.log10(totalVolume + 1) * avgCpc * competitionFactor;
 
   return {
     totalVolume,

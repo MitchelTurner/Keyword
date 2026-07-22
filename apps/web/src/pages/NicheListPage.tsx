@@ -128,7 +128,9 @@ export default function NicheListPage() {
     setSeedMode(mode);
     setSearchingSeeds(true);
     setSearchProgress(
-      mode === "low_cpc" ? "Starting low-CPC search…" : "Starting search…",
+      mode === "low_cpc"
+        ? "Starting low-CPC search (≥100k vol, monetizable)…"
+        : "Starting search…",
     );
     setError(null);
     // Clear prior results immediately so a default search can't flash high CPCs.
@@ -162,11 +164,14 @@ export default function NicheListPage() {
         if (job.status === "done") {
           const result =
             job.result ?? (await api.recommendations({ mode }));
-          // Belt-and-suspenders: drop anything over $1 in low-CPC mode.
+          // Belt-and-suspenders: low-CPC needs CPC ≤ $1 and volume ≥ 100k.
           const keywords =
             mode === "low_cpc"
               ? (result.keywords ?? []).filter(
-                  (k) => k.cpc != null && k.cpc <= 1,
+                  (k) =>
+                    k.cpc != null &&
+                    k.cpc <= 1 &&
+                    (k.volume ?? 0) >= 100_000,
                 )
               : (result.keywords ?? []);
           setSeedMode(mode);
@@ -177,18 +182,20 @@ export default function NicheListPage() {
               setError(`AI review blocked results: ${result.aiReviewError}`);
             } else if (d && d.discovered > 0 && d.afterAi === 0) {
               setError(
-                `Found ${d.discovered} candidates, but AI rejected all as not buildable/monetizable. Try again for a new mix.`,
+                mode === "low_cpc"
+                  ? `Found ${d.discovered} cheap high-volume candidates, but AI rejected all for weak monetization. Try again for a new mix.`
+                  : `Found ${d.discovered} candidates, but AI rejected all as not buildable/monetizable. Try again for a new mix.`,
               );
             } else if (d && d.discovered === 0) {
               setError(
                 mode === "low_cpc"
-                  ? "No keywords found with CPC ≤ $1 under the volume/competition filters. Try again for a new probe mix."
+                  ? "No keywords found with ≥100k/mo volume and CPC ≤ $1. Try again for a new probe mix."
                   : "DataForSEO returned no candidates under the volume/competition filters. Try again.",
               );
             } else {
               setError(
                 mode === "low_cpc"
-                  ? "Search finished but found no seeds with CPC ≤ $1. Try again."
+                  ? "Search finished but found no monetizable seeds with ≥100k/mo and CPC ≤ $1. Try again."
                   : "Search finished but found no buildable seeds. Try again.",
               );
             }

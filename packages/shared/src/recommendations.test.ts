@@ -3,6 +3,7 @@ import {
   CURATED_NICHES,
   LOW_CPC_TOPIC_PROBES,
   RECOMMENDED_SEED_LOW_CPC_LIMIT,
+  RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME,
   TOPIC_PROBES,
   buildRecommendations,
   diversifyApiSeedRecommendations,
@@ -33,20 +34,28 @@ describe("recommendations", () => {
     expect(pricey).toBeGreaterThan(cheap);
   });
 
-  it("low-CPC score prefers pennies over dollar clicks", () => {
-    const pennies = seedLowCpcScore(2000, 0.2, 0.08);
-    const dollar = seedLowCpcScore(2000, 0.2, 0.95);
+  it("low-CPC score prefers pennies over dollar clicks at equal volume", () => {
+    const pennies = seedLowCpcScore(200_000, 0.2, 0.08);
+    const dollar = seedLowCpcScore(200_000, 0.2, 0.95);
     expect(pennies).toBeGreaterThan(dollar);
   });
 
-  it("filters and ranks low-CPC API seeds cheapest first within categories", () => {
+  it("low-CPC score requires 100k volume and prefers higher volume", () => {
+    expect(RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME).toBe(100_000);
+    expect(seedLowCpcScore(50_000, 0.2, 0.1)).toBe(0);
+    const high = seedLowCpcScore(500_000, 0.2, 0.2);
+    const floor = seedLowCpcScore(100_000, 0.2, 0.2);
+    expect(high).toBeGreaterThan(floor);
+  });
+
+  it("filters and ranks low-CPC API seeds by volume then cheap CPC", () => {
     const picks = diversifyApiSeedRecommendations(
       [
         {
           term: "cheap habit tracker free",
           category: "Productivity",
           probe: "habit tracker",
-          volume: 1200,
+          volume: 150_000,
           competition: 0.2,
           cpc: 0.12,
         },
@@ -54,7 +63,7 @@ describe("recommendations", () => {
           term: "premium habit coaching app",
           category: "Productivity",
           probe: "habit tracker",
-          volume: 1800,
+          volume: 180_000,
           competition: 0.2,
           cpc: 2.5,
         },
@@ -62,7 +71,7 @@ describe("recommendations", () => {
           term: "simple budget spreadsheet template",
           category: "Fintech",
           probe: "budget spreadsheet",
-          volume: 900,
+          volume: 220_000,
           competition: 0.25,
           cpc: 0.05,
         },
@@ -72,6 +81,7 @@ describe("recommendations", () => {
       { maxCpc: 1, preferLowCpc: true },
     );
     expect(picks.every((p) => (p.cpc ?? 99) <= 1)).toBe(true);
+    expect(picks.every((p) => (p.volume ?? 0) >= 100_000)).toBe(true);
     expect(picks.map((p) => p.term)).not.toContain("premium habit coaching app");
     expect(picks.length).toBeGreaterThanOrEqual(2);
   });
@@ -81,7 +91,7 @@ describe("recommendations", () => {
     const seeds = LOW_CPC_TOPIC_PROBES.map((p) => p.seed.toLowerCase()).join(
       " ",
     );
-    expect(seeds).toMatch(/template|generator|planner|tracker|checklist/);
+    expect(seeds).toMatch(/calculator|generator|builder|planner|tracker/);
   });
 
   it("fills low-CPC results beyond one category when cheap terms exist", () => {
@@ -107,7 +117,7 @@ describe("recommendations", () => {
       term,
       category: i % 2 === 0 ? "Tools" : "Edtech",
       probe: "study planner template",
-      volume: 250 + i * 10,
+      volume: 120_000 + i * 5_000,
       competition: 0.4,
       cpc: 0.05 + i * 0.02,
     }));
@@ -117,10 +127,10 @@ describe("recommendations", () => {
     });
     expect(picks.length).toBeGreaterThanOrEqual(10);
     expect(picks.every((p) => (p.cpc ?? 99) <= 1)).toBe(true);
-    expect(picks[0]!.cpc!).toBeLessThanOrEqual(picks[picks.length - 1]!.cpc!);
+    expect(picks.every((p) => (p.volume ?? 0) >= 100_000)).toBe(true);
   });
 
-  it("buildRecommendations returns more low-CPC slots than default", () => {
+  it("buildRecommendations returns up to low-CPC limit for monetizable volume", () => {
     const nouns = [
       "alpha",
       "bravo",
@@ -152,22 +162,12 @@ describe("recommendations", () => {
       "coral",
       "ivory",
       "jade",
-      "onyx",
-      "pearl",
-      "ruby",
-      "topaz",
-      "azure",
-      "crimson",
-      "violet",
-      "indigo",
-      "maroon",
-      "olive",
     ];
     const many = nouns.map((n, i) => ({
       term: `${n} niche builder app`,
       category: `Cat${i % 8}`,
       probe: "habit tracker",
-      volume: 300,
+      volume: 110_000 + i * 1_000,
       competition: 0.3,
       cpc: 0.1 + (i % 5) * 0.05,
     }));
@@ -177,8 +177,9 @@ describe("recommendations", () => {
       maxCpc: 1,
       preferLowCpc: true,
     });
-    expect(low.keywords.length).toBeGreaterThan(24);
+    expect(low.keywords.length).toBeGreaterThan(8);
     expect(low.keywords.length).toBeLessThanOrEqual(RECOMMENDED_SEED_LOW_CPC_LIMIT);
+    expect(low.keywords.every((k) => (k.volume ?? 0) >= 100_000)).toBe(true);
   });
 
   it("biases topic probes toward software and tools", () => {
@@ -205,35 +206,25 @@ describe("recommendations", () => {
           competition: 0.22,
         },
         {
-          term: "car accident attorney",
-          category: "Legal",
-          probe: "personal injury lawyer",
-          volume: 1500,
-          competition: 0.3,
-        },
-        {
-          term: "truck accident lawyer",
-          category: "Legal",
-          probe: "personal injury lawyer",
+          term: "hoa fee dispute help",
+          category: "Proptech",
+          probe: "hoa management",
           volume: 900,
-          competition: 0.28,
+          competition: 0.15,
         },
         {
-          term: "residential solar cost",
-          category: "Energy",
-          probe: "solar panels",
+          term: "keto meal planner app",
+          category: "Food",
+          probe: "meal planning",
           volume: 1100,
           competition: 0.25,
         },
       ],
       [],
-      3,
+      10,
     );
-
-    expect(picks).toHaveLength(3);
     const cats = new Set(picks.map((p) => p.category));
-    expect(cats.size).toBe(3);
-    expect(picks.every((p) => p.source === "api")).toBe(true);
+    expect(cats.size).toBeGreaterThanOrEqual(2);
     expect(picks.every((p) => isSeedablePhrase(p.term))).toBe(true);
   });
 

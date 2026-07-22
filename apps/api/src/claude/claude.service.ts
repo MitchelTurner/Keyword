@@ -94,6 +94,37 @@ Rules:
 - reason: short (under 200 chars)
 - No markdown, no prose outside the JSON`;
 
+const SEED_MONETIZE_LOW_CPC_SYSTEM = `You review HIGH-VOLUME (≥100k/mo) low-CPC seed keywords for a solo founder who wants to make money with a website or software product.
+
+These keywords already cleared a cheap Ads CPC filter (≤ $1). Your job is monetization quality — not CPC.
+
+APPROVE only when there is a clear path to revenue at scale:
+- Freemium / SaaS tools & calculators people will use repeatedly
+- Affiliate or comparison content with known commercial products (finance, health, software, careers)
+- Lead-gen or directory plays with buyers on the other side
+- Digital products, templates, courses, newsletters with paid upside
+- Ad-supported tools/content where 100k+ volume makes display/native ads meaningful
+
+REJECT even if popular when money is unclear:
+- Pure curiosity / trivia / celebrity / meme searches with no product angle
+- One-off definition lookups with no tool or affiliate path
+- Licensed professions you would have to perform in person
+- Pure local "near me" services
+- Brand-only terms, jobs-only intent, illegal/adult/scam topics
+- Ultra-generic single-intent noise with no wedge
+
+In each approve reason, name the monetization model in a few words (e.g. "freemium calculator + ads", "affiliate comparison site").
+
+Respond ONLY with JSON:
+{"reviews":[{"keyword":string,"approve":boolean,"reason":string}]}
+
+Rules:
+- Include EVERY input keyword exactly once in reviews (match the keyword string)
+- Prefer fewer strong monetizable niches over many weak ones
+- When unsure, reject
+- reason: short (under 200 chars)
+- No markdown, no prose outside the JSON`;
+
 const THEME_BUILD_SYSTEM = `You turn keyword research themes into concrete build briefs for a solo founder.
 
 For each theme, propose:
@@ -291,6 +322,7 @@ export class ClaudeService {
    */
   async reviewMonetizableSeeds(
     keywords: string[],
+    opts?: { mode?: "default" | "low_cpc" },
   ): Promise<ClaudeSeedMonetizationReview> {
     const unique = [
       ...new Set(
@@ -304,7 +336,11 @@ export class ClaudeService {
       return { reviews: [] };
     }
 
-    const user = `Review these seed keywords for buildable + easily monetizable website/software niches:\n${JSON.stringify(unique)}`;
+    const lowCpc = opts?.mode === "low_cpc";
+    const system = lowCpc ? SEED_MONETIZE_LOW_CPC_SYSTEM : SEED_MONETIZE_SYSTEM;
+    const user = lowCpc
+      ? `Review these high-volume low-CPC seed keywords for clear monetization paths (approve only if money is realistic):\n${JSON.stringify(unique)}`
+      : `Review these seed keywords for buildable + easily monetizable website/software niches:\n${JSON.stringify(unique)}`;
 
     const tryParse = (raw: string) => {
       try {
@@ -320,13 +356,13 @@ export class ClaudeService {
       }
     };
 
-    let text = await this.complete(SEED_MONETIZE_SYSTEM, user);
+    let text = await this.complete(system, user);
     let parsed = tryParse(text);
 
     if (!parsed.success) {
       this.logger.warn(`Claude seed monetize review parse failed, retrying once`);
       text = await this.complete(
-        SEED_MONETIZE_SYSTEM,
+        system,
         `${user}\n\nPrevious response failed validation: ${parsed.error.message}. Return corrected JSON only.`,
       );
       parsed = tryParse(text);

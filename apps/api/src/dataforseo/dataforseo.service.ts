@@ -64,6 +64,7 @@ export function extractSearchVolumeItems(result: unknown[] | null | undefined): 
 
 type SeedDiscoveryCache = {
   mode: "default" | "low_cpc";
+  minVolume: number;
   expiresAt: number;
   candidates: ApiSeedCandidate[];
 };
@@ -322,7 +323,8 @@ export class DataForSeoService {
     if (
       !opts?.forceRefresh &&
       cache &&
-      cache.expiresAt > Date.now()
+      cache.expiresAt > Date.now() &&
+      cache.minVolume === minVolume
     ) {
       return this.applyMaxCpcFilter(
         cache.candidates,
@@ -426,15 +428,17 @@ export class DataForSeoService {
       }
     }
 
-    // Critical: low-CPC shortlist must be cheapest-first. Volume-first almost
-    // exclusively surfaces $5–$80 commercial head terms.
+    // Low-CPC @ 100k+: keep cheap clicks, prefer highest volume for monetization.
+    // Default mode: volume-first.
     const shortlist = [...bestByTerm.values()]
+      .filter((c) => (c.volume ?? 0) >= minVolume)
       .sort((a, b) => {
         if (lowCpc) {
+          const volDiff = (b.volume ?? 0) - (a.volume ?? 0);
+          if (volDiff !== 0) return volDiff;
           const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
           const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
-          if (cpcA !== cpcB) return cpcA - cpcB;
-          return (b.volume ?? 0) - (a.volume ?? 0);
+          return cpcA - cpcB;
         }
         return (b.volume ?? 0) - (a.volume ?? 0);
       })
@@ -474,6 +478,7 @@ export class DataForSeoService {
 
     const nextCache: SeedDiscoveryCache = {
       mode: lowCpc ? "low_cpc" : "default",
+      minVolume,
       expiresAt: Date.now() + ttlMs,
       candidates: refined,
     };
@@ -655,9 +660,10 @@ export class DataForSeoService {
         filters,
         order_by:
           maxCpc != null
-            ? ["keyword_info.cpc,asc", "keyword_info.search_volume,desc"]
+            ? // High-volume monetizable cheap clicks: volume first, then CPC.
+              ["keyword_info.search_volume,desc", "keyword_info.cpc,asc"]
             : ["keyword_info.search_volume,desc"],
-        limit: maxCpc != null ? 80 : 40,
+        limit: maxCpc != null ? 100 : 40,
       },
     ];
 

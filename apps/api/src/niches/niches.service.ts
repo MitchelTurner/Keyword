@@ -619,7 +619,7 @@ export class NichesService {
     try {
       opts.onProgress?.(
         mode === "low_cpc"
-          ? "Querying DataForSEO for cheap CPC niches…"
+          ? "Querying DataForSEO for cheap CPC niches (≥100k vol)…"
           : "Querying DataForSEO…",
       );
       apiCandidates = await this.dataForSeo.discoverRecommendedSeeds({
@@ -641,15 +641,26 @@ export class NichesService {
     apiCandidates = apiCandidates.filter(
       (c) => !rejectedSet.has(c.term.trim().toLowerCase()),
     );
+    // Hard volume floor for low-CPC before AI spend.
+    if (mode === "low_cpc" && minVolume != null) {
+      apiCandidates = apiCandidates.filter(
+        (c) => (c.volume ?? 0) >= minVolume,
+      );
+    }
     afterRejectList = apiCandidates.length;
 
     // AI gate — fail closed: never surface unreviewed volume/comp seeds.
     if (apiCandidates.length > 0) {
       try {
-        opts.onProgress?.("AI-reviewing for buildable niches…");
+        opts.onProgress?.(
+          mode === "low_cpc"
+            ? "AI-reviewing for high-volume monetizable niches…"
+            : "AI-reviewing for buildable niches…",
+        );
         apiCandidates = await this.filterMonetizableSeeds(
           apiCandidates,
           opts.forceRefresh,
+          mode,
         );
         afterAi = apiCandidates.length;
       } catch (err) {
@@ -690,16 +701,26 @@ export class NichesService {
       (k) => !rejectedSet.has(k.term.trim().toLowerCase()),
     );
 
-    // Hard guarantee: low-CPC mode never returns keywords above the ceiling.
+    // Hard guarantee: low-CPC mode never returns keywords above the ceiling
+    // or below the 100k volume floor.
     if (maxCpc != null) {
+      const volFloor = minVolume ?? RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME;
       keywords = keywords.filter(
-        (k) => k.cpc != null && !Number.isNaN(k.cpc) && k.cpc <= maxCpc,
+        (k) =>
+          k.cpc != null &&
+          !Number.isNaN(k.cpc) &&
+          k.cpc <= maxCpc &&
+          (k.volume ?? 0) >= volFloor,
       );
       keywords = [...keywords].sort((a, b) => {
+        const scoreA = a.score ?? 0;
+        const scoreB = b.score ?? 0;
+        if (scoreB !== scoreA) return scoreB - scoreA;
+        const volDiff = (b.volume ?? 0) - (a.volume ?? 0);
+        if (volDiff !== 0) return volDiff;
         const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
         const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
-        if (cpcA !== cpcB) return cpcA - cpcB;
-        return (b.volume ?? 0) - (a.volume ?? 0);
+        return cpcA - cpcB;
       });
     }
 
@@ -708,8 +729,13 @@ export class NichesService {
       keywords = await this.attachSerpPreviews(keywords, 5);
       // SERP attach must not reintroduce high-CPC rows.
       if (maxCpc != null) {
+        const volFloor = minVolume ?? RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME;
         keywords = keywords.filter(
-          (k) => k.cpc != null && !Number.isNaN(k.cpc) && k.cpc <= maxCpc,
+          (k) =>
+            k.cpc != null &&
+            !Number.isNaN(k.cpc) &&
+            k.cpc <= maxCpc &&
+            (k.volume ?? 0) >= volFloor,
         );
       }
     }
@@ -772,11 +798,12 @@ export class NichesService {
   private async filterMonetizableSeeds(
     candidates: ApiSeedCandidate[],
     forceRefresh: boolean,
+    mode: SeedSearchMode = "default",
   ): Promise<ApiSeedCandidate[]> {
-    const key = candidates
+    const key = `${mode}|${candidates
       .map((c) => c.term.trim().toLowerCase())
       .sort()
-      .join("|");
+      .join("|")}`;
     const ttlMs = 6 * 60 * 60 * 1000;
 
     if (
@@ -799,6 +826,7 @@ export class NichesService {
 
     const review = await this.claude.reviewMonetizableSeeds(
       candidates.map((c) => c.term),
+      { mode },
     );
     const reasons = new Map<string, string>();
     for (const r of review.reviews) {

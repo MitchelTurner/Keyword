@@ -92,10 +92,11 @@ export default function RecommendationsPanel({
     });
     if (!lowCpcMode) return filtered;
     return [...filtered].sort((a, b) => {
+      const volDiff = (b.volume ?? 0) - (a.volume ?? 0);
+      if (volDiff !== 0) return volDiff;
       const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
       const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
-      if (cpcA !== cpcB) return cpcA - cpcB;
-      return (b.volume ?? 0) - (a.volume ?? 0);
+      return cpcA - cpcB;
     });
   }, [keywords, selectedSeed, lowCpcMode, cpcCeiling, compCeiling, minVolume]);
 
@@ -125,7 +126,7 @@ export default function RecommendationsPanel({
           onClick={() => void onSearchLowCpc()}
           disabled={searching}
           className="rounded border border-sky-800/70 bg-sky-950/30 px-2.5 py-1 text-xs font-medium text-sky-300 transition hover:bg-sky-950/55 disabled:cursor-wait disabled:opacity-50"
-          title={`Find buildable niches with Ads CPC ≤ $${cpcCeiling.toFixed(2)} (prefer a few cents/click)`}
+          title={`Find monetizable niches with ≥ ${num(minVolume)}/mo volume and Ads CPC ≤ $${cpcCeiling.toFixed(2)}`}
         >
           {searching && lowCpcMode ? "Searching low CPC…" : "Search low CPC"}
         </button>
@@ -139,7 +140,7 @@ export default function RecommendationsPanel({
         title="Recommended seeds"
         hint={
           lowCpcMode
-            ? `Low CPC ≤ $${cpcCeiling.toFixed(2)} · high volume · AI-reviewed buildable niches`
+            ? `Low CPC ≤ $${cpcCeiling.toFixed(2)} · volume ≥ ${num(minVolume)} · AI-reviewed for monetization`
             : "High volume · low competition · AI-reviewed for buildable monetizable niches"
         }
       >
@@ -152,7 +153,7 @@ export default function RecommendationsPanel({
                 ? `AI review unavailable — seeds hidden until review works. ${aiReviewError}`
                 : emptyHint ||
                   (lowCpcMode
-                    ? `No cheap-CPC niches yet. Click Search low CPC (volume ≥ ${minVolume}, CPC ≤ $${cpcCeiling.toFixed(2)}, prefer pennies).`
+                    ? `No matches yet. Click Search low CPC (volume ≥ ${num(minVolume)}, CPC ≤ $${cpcCeiling.toFixed(2)}, clear monetization path).`
                     : "No buildable niches yet. Click Search new seeds (volume ≥ 500, competition ≤ 50%, AI filters out professions like “doctor”).")}
           </p>
           {searchButtons}
@@ -182,18 +183,19 @@ export default function RecommendationsPanel({
         searching
           ? progress || "Searching live API + AI review for a fresh mix…"
           : lowCpcMode
-            ? `${apiSeeds.length} low-CPC niches · CPC ≤ $${cpcCeiling.toFixed(2)} · cheapest first`
+            ? `${apiSeeds.length} monetizable niches · ≥ ${num(minVolume)}/mo · CPC ≤ $${cpcCeiling.toFixed(2)}`
             : `${apiSeeds.length} AI-reviewed niches · volume ≥ 500 · competition ≤ ${Math.round(RECOMMENDED_SEED_MAX_COMPETITION * 100)}%`
       }
     >
       {lowCpcMode && (
         <p className="mb-2 rounded border border-sky-900/50 bg-sky-950/30 px-2.5 py-1.5 text-xs text-sky-300">
-          Low-CPC mode — only showing Ads CPC ≤ ${cpcCeiling.toFixed(2)}
+          Low-CPC mode — volume ≥ {num(minVolume)}/mo, Ads CPC ≤ $
+          {cpcCeiling.toFixed(2)}, AI-filtered for monetization
         </p>
       )}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-          {lowCpcMode ? "Cheap-click niches" : "Suggested niches"}
+          {lowCpcMode ? "High-volume cheap niches" : "Suggested niches"}
           <span className="ml-2 normal-case tracking-normal text-zinc-600">
             {cycle.pageCount > 1 ? `${cycle.page + 1}/${cycle.pageCount} · ` : ""}
             {apiSeeds.length}

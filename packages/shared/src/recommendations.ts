@@ -193,34 +193,44 @@ export const TOPIC_PROBES: Array<{
 ];
 
 /**
- * Extra probes that tend to surface cheaper Ads CPC (templates, generators,
- * planners, checklists). Used only for low-CPC discovery.
+ * Extra probes for low-CPC discovery — biased toward mass-market topics that
+ * can clear 100k+/mo volume and still monetize (tools, affiliate, freemium).
  */
 export const LOW_CPC_TOPIC_PROBES: Array<{
   id: string;
   category: string;
   seed: string;
 }> = [
-  { id: "resume-template", category: "Career", seed: "resume template" },
-  { id: "invoice-template", category: "SaaS", seed: "invoice template free" },
-  { id: "name-generator", category: "Tools", seed: "business name generator" },
+  { id: "resume-builder", category: "Career", seed: "resume builder" },
+  { id: "calorie-counter", category: "Health tech", seed: "calorie counter" },
+  { id: "mortgage-calc", category: "Fintech", seed: "mortgage calculator" },
+  { id: "bmi-calc", category: "Health tech", seed: "bmi calculator" },
   { id: "password-gen", category: "Tools", seed: "password generator" },
-  { id: "unit-convert", category: "Tools", seed: "unit converter" },
-  { id: "color-picker", category: "Design tools", seed: "color palette generator" },
-  { id: "study-planner", category: "Edtech", seed: "study planner template" },
-  { id: "chore-chart", category: "Productivity", seed: "chore chart printable" },
-  { id: "garden-planner", category: "Lifestyle", seed: "garden planner" },
-  { id: "wedding-checklist", category: "Lifestyle", seed: "wedding checklist template" },
-  { id: "packing-list", category: "Travel", seed: "packing list template" },
-  { id: "meal-prep", category: "Food tech", seed: "meal prep planner" },
-  { id: "flashcards", category: "Edtech", seed: "flashcard maker" },
-  { id: "quiz-maker", category: "Edtech", seed: "online quiz maker" },
-  { id: "countdown", category: "Tools", seed: "countdown timer" },
+  { id: "qr-code", category: "Tools", seed: "qr code generator" },
+  { id: "logo-maker", category: "Design tools", seed: "logo maker" },
+  { id: "invoice-gen", category: "SaaS", seed: "invoice generator" },
+  { id: "name-generator", category: "Tools", seed: "business name generator" },
   { id: "word-counter", category: "Tools", seed: "word counter" },
   { id: "citation", category: "Edtech", seed: "citation generator" },
-  { id: "qr-code", category: "Tools", seed: "qr code generator" },
-  { id: "logo-maker", category: "Design tools", seed: "logo maker free" },
-  { id: "reading-list", category: "Content", seed: "reading list tracker" },
+  { id: "unit-convert", category: "Tools", seed: "unit converter" },
+  { id: "tip-calc", category: "Tools", seed: "tip calculator" },
+  { id: "age-calc", category: "Tools", seed: "age calculator" },
+  { id: "sleep-calc", category: "Health tech", seed: "sleep calculator" },
+  { id: "percent-calc", category: "Tools", seed: "percentage calculator" },
+  { id: "gpa-calc", category: "Edtech", seed: "gpa calculator" },
+  { id: "time-zone", category: "Tools", seed: "time zone converter" },
+  { id: "color-picker", category: "Design tools", seed: "color picker" },
+  { id: "wedding-budget", category: "Lifestyle", seed: "wedding budget calculator" },
+  { id: "savings-goal", category: "Fintech", seed: "savings calculator" },
+  { id: "habit-tracker", category: "Productivity", seed: "habit tracker app" },
+  { id: "workout-plan", category: "Fitness tech", seed: "workout planner" },
+  { id: "meal-planner", category: "Food tech", seed: "meal planner" },
+  { id: "flashcards", category: "Edtech", seed: "flashcard maker" },
+  { id: "quiz-maker", category: "Edtech", seed: "online quiz maker" },
+  { id: "affiliate-tools", category: "Content", seed: "affiliate marketing for beginners" },
+  { id: "blog-start", category: "Content", seed: "how to start a blog" },
+  { id: "youtube-grow", category: "Content", seed: "how to grow on youtube" },
+  { id: "side-hustle", category: "Career", seed: "side hustle ideas" },
 ];
 
 export type SerpPreviewItem = {
@@ -281,19 +291,19 @@ export const RECOMMENDED_SEED_MAX_COMPETITION = 0.5;
 export const RECOMMENDED_SEED_MAX_CPC = 1;
 
 /**
- * Low-CPC niches are rarer at high volume — accept a lower volume floor so
- * Labs can return more cheap-click long-tails.
+ * Low-CPC mode requires serious demand: ≥ 100k monthly searches so cheap
+ * clicks can still support ads / affiliate / freemium businesses.
  */
-export const RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME = 200;
+export const RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME = 100_000;
 
 /**
- * Slightly looser Ads competition for low-CPC mode. Cheap clicks often sit in
- * moderate-competition informational / template niches.
+ * Slightly looser Ads competition for low-CPC mode. Mass-market cheap-click
+ * niches often sit in moderate competition.
  */
-export const RECOMMENDED_SEED_LOW_CPC_MAX_COMPETITION = 0.65;
+export const RECOMMENDED_SEED_LOW_CPC_MAX_COMPETITION = 0.7;
 
 /** How many low-CPC seeds to surface after ranking/diversify. */
-export const RECOMMENDED_SEED_LOW_CPC_LIMIT = 36;
+export const RECOMMENDED_SEED_LOW_CPC_LIMIT = 24;
 
 /** Head terms used as discovery probes — usually crowded; never recommend these. */
 export function blockedProbeSeeds(): Set<string> {
@@ -339,8 +349,8 @@ export function seedOpportunityScore(
 }
 
 /**
- * Rank for low-CPC hunting: high volume + low competition + cheapest clicks.
- * A few cents/click scores far above ~$1 CPC.
+ * Rank for low-CPC hunting: ≥100k volume first, then cheapest clicks, then
+ * lower Ads competition. Pennies/click still beat ~$1 CPC at equal volume.
  */
 export function seedLowCpcScore(
   volume: number | null | undefined,
@@ -348,15 +358,21 @@ export function seedLowCpcScore(
   cpc?: number | null | undefined,
 ): number {
   const vol = Math.max(0, volume ?? 0);
-  if (vol <= 0) return 0;
-  if (cpc == null || Number.isNaN(cpc) || cpc < 0) return 0;
+  if (vol < RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME) return 0;
+  if (cpc == null || Number.isNaN(cpc) || cpc < 0 || cpc > RECOMMENDED_SEED_MAX_CPC) {
+    return 0;
+  }
   const comp =
     competition == null
       ? 0.55
       : Math.min(1, Math.max(0, competition));
+  // Volume dominates: 100k → ~5, 500k → ~5.7, 1M → ~6
+  const volFactor = Math.log10(vol + 1);
+  // Extra lift as volume scales past the 100k floor.
+  const scaleBoost = 1 + Math.log10(vol / RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME + 1);
   // 1/(0.05+cpc): $0.05 → ~10×, $0.25 → ~4×, $1 → ~1×
   const cheapBoost = 1 / (0.05 + cpc);
-  return Math.log10(vol + 1) * (1.05 - comp) * cheapBoost;
+  return volFactor * scaleBoost * (1.05 - comp) * cheapBoost;
 }
 
 function competitionLabel(competition: number | null | undefined): string {
@@ -471,12 +487,13 @@ export function diversifyApiSeedRecommendations(
 
   for (const [category, list] of byCategory) {
     list.sort((a, b) => {
+      // Low-CPC: volume-weighted score first, then cheapest CPC.
+      if (b.score !== a.score) return b.score - a.score;
       if (preferLowCpc) {
         const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
         const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
         if (cpcA !== cpcB) return cpcA - cpcB;
       }
-      if (b.score !== a.score) return b.score - a.score;
       return (b.volume ?? 0) - (a.volume ?? 0);
     });
     byCategory.set(category, list);
@@ -547,6 +564,7 @@ export function diversifyApiSeedRecommendations(
       .flat()
       .filter((c) => !pickedKeys.has(normalizeTerm(c.term)))
       .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
         const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
         const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
         if (cpcA !== cpcB) return cpcA - cpcB;

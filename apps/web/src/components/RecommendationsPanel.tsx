@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { RECOMMENDED_SEED_MAX_COMPETITION } from "@prospector/shared";
-import type { RecommendedKeyword, RecommendedNiche } from "../api";
+import {
+  RECOMMENDED_SEED_MAX_COMPETITION,
+  RECOMMENDED_SEED_MAX_CPC,
+} from "@prospector/shared";
+import type {
+  RecommendedKeyword,
+  RecommendedNiche,
+  SeedSearchMode,
+} from "../api";
 import { num } from "../api";
 import Panel from "./Panel";
 
@@ -34,58 +41,97 @@ export default function RecommendationsPanel({
   selectedSeed,
   onPick,
   onSearchNew,
+  onSearchLowCpc,
   onReject,
   searching = false,
   progress,
   aiReviewError,
   emptyHint,
+  mode = "default",
+  maxCpc,
 }: {
   niches: RecommendedNiche[];
   keywords: RecommendedKeyword[];
   selectedSeed: string;
   onPick: (term: string) => void;
   onSearchNew?: () => void | Promise<void>;
+  onSearchLowCpc?: () => void | Promise<void>;
   onReject?: (term: string) => void | Promise<void>;
   searching?: boolean;
   progress?: string;
   aiReviewError?: string;
   emptyHint?: string;
+  mode?: SeedSearchMode;
+  maxCpc?: number | null;
 }) {
+  const lowCpcMode = mode === "low_cpc";
+  const cpcCeiling = maxCpc ?? RECOMMENDED_SEED_MAX_CPC;
+
   const apiSeeds = useMemo(() => {
     const selected = selectedSeed.trim().toLowerCase();
-    return keywords.filter(
-      (k) =>
-        k.source === "api" &&
-        k.term.trim().toLowerCase() !== selected &&
-        k.competition != null &&
-        k.competition <= RECOMMENDED_SEED_MAX_COMPETITION,
-    );
-  }, [keywords, selectedSeed]);
+    const filtered = keywords.filter((k) => {
+      if (k.source !== "api") return false;
+      if (k.term.trim().toLowerCase() === selected) return false;
+      if (k.competition == null || k.competition > RECOMMENDED_SEED_MAX_COMPETITION) {
+        return false;
+      }
+      if (lowCpcMode) {
+        if (k.cpc == null || k.cpc > cpcCeiling) return false;
+      }
+      return true;
+    });
+    if (!lowCpcMode) return filtered;
+    return [...filtered].sort((a, b) => {
+      const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
+      const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
+      if (cpcA !== cpcB) return cpcA - cpcB;
+      return (b.volume ?? 0) - (a.volume ?? 0);
+    });
+  }, [keywords, selectedSeed, lowCpcMode, cpcCeiling]);
 
   const cycle = useCyclePage(
     apiSeeds.length,
     PAGE_SIZE,
-    apiSeeds.map((k) => k.term).join("|"),
+    `${mode}|${apiSeeds.map((k) => k.term).join("|")}`,
   );
   const pageItems = apiSeeds.slice(cycle.start, cycle.start + PAGE_SIZE);
 
-  const searchButton = onSearchNew ? (
-    <button
-      type="button"
-      onClick={() => void onSearchNew()}
-      disabled={searching}
-      className="rounded border border-emerald-800/70 bg-emerald-950/30 px-2.5 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-950/55 disabled:cursor-wait disabled:opacity-50"
-      title="Run a fresh DataForSEO search, then AI-review for buildable monetizable niches"
-    >
-      {searching ? "Searching…" : "Search new seeds"}
-    </button>
-  ) : null;
+  const searchButtons = (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {onSearchNew && (
+        <button
+          type="button"
+          onClick={() => void onSearchNew()}
+          disabled={searching}
+          className="rounded border border-emerald-800/70 bg-emerald-950/30 px-2.5 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-950/55 disabled:cursor-wait disabled:opacity-50"
+          title="Run a fresh DataForSEO search, then AI-review for buildable monetizable niches"
+        >
+          {searching && !lowCpcMode ? "Searching…" : "Search new seeds"}
+        </button>
+      )}
+      {onSearchLowCpc && (
+        <button
+          type="button"
+          onClick={() => void onSearchLowCpc()}
+          disabled={searching}
+          className="rounded border border-sky-800/70 bg-sky-950/30 px-2.5 py-1 text-xs font-medium text-sky-300 transition hover:bg-sky-950/55 disabled:cursor-wait disabled:opacity-50"
+          title={`Find buildable niches with Ads CPC ≤ $${cpcCeiling.toFixed(2)} (prefer a few cents/click)`}
+        >
+          {searching && lowCpcMode ? "Searching low CPC…" : "Search low CPC"}
+        </button>
+      )}
+    </div>
+  );
 
   if (apiSeeds.length === 0) {
     return (
       <Panel
         title="Recommended seeds"
-        hint="High volume · low competition · AI-reviewed for buildable monetizable niches"
+        hint={
+          lowCpcMode
+            ? `Low CPC ≤ $${cpcCeiling.toFixed(2)} · high volume · AI-reviewed buildable niches`
+            : "High volume · low competition · AI-reviewed for buildable monetizable niches"
+        }
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-zinc-500">
@@ -95,9 +141,11 @@ export default function RecommendationsPanel({
               : aiReviewError
                 ? `AI review unavailable — seeds hidden until review works. ${aiReviewError}`
                 : emptyHint ||
-                  "No buildable niches yet. Click Search new seeds (volume ≥ 500, competition ≤ 45%, AI filters out professions like “doctor”)."}
+                  (lowCpcMode
+                    ? `No cheap-CPC niches yet. Click Search low CPC (volume ≥ 500, CPC ≤ $${cpcCeiling.toFixed(2)}, prefer pennies).`
+                    : "No buildable niches yet. Click Search new seeds (volume ≥ 500, competition ≤ 50%, AI filters out professions like “doctor”).")}
           </p>
-          {searchButton}
+          {searchButtons}
         </div>
       </Panel>
     );
@@ -123,19 +171,21 @@ export default function RecommendationsPanel({
       hint={
         searching
           ? progress || "Searching live API + AI review for a fresh mix…"
-          : `${apiSeeds.length} AI-reviewed niches · volume ≥ 500 · competition ≤ ${Math.round(RECOMMENDED_SEED_MAX_COMPETITION * 100)}%`
+          : lowCpcMode
+            ? `${apiSeeds.length} low-CPC niches · CPC ≤ $${cpcCeiling.toFixed(2)} · cheapest first`
+            : `${apiSeeds.length} AI-reviewed niches · volume ≥ 500 · competition ≤ ${Math.round(RECOMMENDED_SEED_MAX_COMPETITION * 100)}%`
       }
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-          Suggested niches
+          {lowCpcMode ? "Cheap-click niches" : "Suggested niches"}
           <span className="ml-2 normal-case tracking-normal text-zinc-600">
             {cycle.pageCount > 1 ? `${cycle.page + 1}/${cycle.pageCount} · ` : ""}
             {apiSeeds.length}
           </span>
         </p>
         <div className="flex flex-wrap items-center gap-1.5">
-          {searchButton}
+          {searchButtons}
           {cycle.pageCount > 1 && (
             <>
               <button
@@ -187,6 +237,22 @@ export default function RecommendationsPanel({
                   )}
                 </span>
                 <span className="block text-xs text-zinc-500">
+                  {k.cpc != null && k.cpc >= 0 && (
+                    <>
+                      <span
+                        className={`tabular-nums font-medium ${
+                          k.cpc <= 0.25
+                            ? "text-sky-300"
+                            : k.cpc <= 1
+                              ? "text-sky-400/90"
+                              : "text-zinc-400"
+                        }`}
+                      >
+                        ${k.cpc.toFixed(2)} CPC
+                      </span>
+                      <span className="mx-1.5 text-zinc-700">·</span>
+                    </>
+                  )}
                   <span className="tabular-nums text-zinc-400">
                     {k.volume != null ? num(k.volume) : "—"}/mo
                   </span>
@@ -196,14 +262,6 @@ export default function RecommendationsPanel({
                       ? `${Math.round(k.competition * 100)}% comp`
                       : "comp n/a"}
                   </span>
-                  {k.cpc != null && k.cpc > 0 && (
-                    <>
-                      <span className="mx-1.5 text-zinc-700">·</span>
-                      <span className="tabular-nums text-zinc-400">
-                        ${k.cpc.toFixed(2)} CPC
-                      </span>
-                    </>
-                  )}
                 </span>
                 {k.aiReason && (
                   <span className="mt-0.5 block text-xs leading-snug text-zinc-400">

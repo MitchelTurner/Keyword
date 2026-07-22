@@ -6,6 +6,7 @@ import {
   type CostEstimate,
   type NicheListItem,
   type RecommendationsResponse,
+  type SeedSearchMode,
 } from "../api";
 import StatusBadge from "../components/StatusBadge";
 import PageHeader from "../components/PageHeader";
@@ -114,12 +115,14 @@ export default function NicheListPage() {
     await refresh();
   }
 
-  async function onSearchNewSeeds() {
+  async function runSeedSearch(mode: SeedSearchMode) {
     setSearchingSeeds(true);
-    setSearchProgress("Starting search…");
+    setSearchProgress(
+      mode === "low_cpc" ? "Starting low-CPC search…" : "Starting search…",
+    );
     setError(null);
     try {
-      const started = await api.recommendations({ refresh: true });
+      const started = await api.recommendations({ refresh: true, mode });
       setRecs(started);
       setSearchProgress(started.progress || "Searching…");
 
@@ -129,7 +132,8 @@ export default function NicheListPage() {
         const job = await api.recommendationsJob();
         setSearchProgress(job.progress || undefined);
         if (job.status === "done") {
-          const result = job.result ?? (await api.recommendations());
+          const result =
+            job.result ?? (await api.recommendations({ mode }));
           setRecs(result);
           if ((result.keywords?.length ?? 0) === 0) {
             const d = result.diagnostics;
@@ -137,15 +141,19 @@ export default function NicheListPage() {
               setError(`AI review blocked results: ${result.aiReviewError}`);
             } else if (d && d.discovered > 0 && d.afterAi === 0) {
               setError(
-                `Found ${d.discovered} volume/competition candidates, but AI rejected all as not buildable/monetizable. Try again for a new mix.`,
+                `Found ${d.discovered} candidates, but AI rejected all as not buildable/monetizable. Try again for a new mix.`,
               );
             } else if (d && d.discovered === 0) {
               setError(
-                "DataForSEO returned no candidates under the volume/competition filters. Try again.",
+                mode === "low_cpc"
+                  ? "No keywords found with CPC ≤ $1 under the volume/competition filters. Try Search new seeds first, then Search low CPC."
+                  : "DataForSEO returned no candidates under the volume/competition filters. Try again.",
               );
             } else {
               setError(
-                "Search finished but found no buildable seeds. Try again.",
+                mode === "low_cpc"
+                  ? "Search finished but found no low-CPC buildable seeds. Try again."
+                  : "Search finished but found no buildable seeds. Try again.",
               );
             }
           }
@@ -249,11 +257,14 @@ export default function NicheListPage() {
         keywords={recs?.keywords ?? []}
         selectedSeed={seedTerm}
         onPick={setSeedTerm}
-        onSearchNew={onSearchNewSeeds}
+        onSearchNew={() => runSeedSearch("default")}
+        onSearchLowCpc={() => runSeedSearch("low_cpc")}
         onReject={onRejectSeed}
         searching={searchingSeeds}
         progress={searchProgress}
         aiReviewError={recs?.aiReviewError}
+        mode={recs?.mode ?? "default"}
+        maxCpc={recs?.maxCpc}
         emptyHint={
           recs?.diagnostics && recs.diagnostics.discovered > 0
             ? `Last search: ${recs.diagnostics.discovered} candidates → ${recs.diagnostics.afterAi} AI-approved → ${recs.diagnostics.recommended} shown.`

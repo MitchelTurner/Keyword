@@ -37,6 +37,8 @@ export const SearchSeedKeywordsSchema = z.object({
   q: z.string().trim().max(200).optional().default(""),
   minVolume: z.coerce.number().int().min(0).max(10_000_000).optional().default(500),
   maxCompetition: z.coerce.number().min(0).max(1).optional().default(0.45),
+  /** Prefer cheap clicks — default unset; low-CPC mode uses ≤ $1. */
+  maxCpc: z.coerce.number().min(0).max(1000).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(40),
 });
 export type SearchSeedKeywordsDto = z.infer<typeof SearchSeedKeywordsSchema>;

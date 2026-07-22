@@ -214,6 +214,8 @@ export type SeedSearchDiagnostics = {
   recommended: number;
 };
 
+export type SeedSearchMode = "default" | "low_cpc";
+
 export type RecommendationsResponse = {
   niches: RecommendedNiche[];
   keywords: RecommendedKeyword[];
@@ -222,6 +224,8 @@ export type RecommendationsResponse = {
   searching?: boolean;
   jobId?: string | null;
   progress?: string;
+  mode?: SeedSearchMode;
+  maxCpc?: number | null;
   diagnostics?: SeedSearchDiagnostics;
 };
 
@@ -229,6 +233,7 @@ export type RecommendationsJob = {
   jobId: string | null;
   status: "idle" | "running" | "done" | "error";
   progress: string;
+  mode?: SeedSearchMode;
   error: string | null;
   updatedAt: number;
   result: RecommendationsResponse | null;
@@ -239,6 +244,7 @@ export type SeedSearchResponse = {
     q: string;
     minVolume: number;
     maxCompetition: number;
+    maxCpc?: number | null;
     limit: number;
   };
   count: number;
@@ -252,12 +258,20 @@ export const api = {
       costEstimate: CostEstimate;
       niches: NicheListItem[];
     }>("/niches"),
-  recommendations: (opts?: { refresh?: boolean }) =>
-    opts?.refresh
-      ? request<RecommendationsResponse>("/recommendations/refresh", {
+  recommendations: (opts?: { refresh?: boolean; mode?: SeedSearchMode }) => {
+    const mode = opts?.mode ?? "default";
+    if (opts?.refresh) {
+      return request<RecommendationsResponse>(
+        `/recommendations/refresh?mode=${encodeURIComponent(mode)}`,
+        {
           method: "POST",
-        })
-      : request<RecommendationsResponse>("/recommendations"),
+          body: JSON.stringify({ mode }),
+        },
+      );
+    }
+    const qs = mode === "default" ? "" : `?mode=${encodeURIComponent(mode)}`;
+    return request<RecommendationsResponse>(`/recommendations${qs}`);
+  },
   recommendationsJob: () =>
     request<RecommendationsJob>("/recommendations/job"),
   rejectSeed: (term: string, reason?: string) =>
@@ -274,6 +288,7 @@ export const api = {
     q?: string;
     minVolume?: number;
     maxCompetition?: number;
+    maxCpc?: number;
     limit?: number;
   }) => {
     const qs = new URLSearchParams();
@@ -282,6 +297,7 @@ export const api = {
     if (params.maxCompetition != null) {
       qs.set("maxCompetition", String(params.maxCompetition));
     }
+    if (params.maxCpc != null) qs.set("maxCpc", String(params.maxCpc));
     if (params.limit != null) qs.set("limit", String(params.limit));
     const suffix = qs.toString() ? `?${qs}` : "";
     return request<SeedSearchResponse>(`/recommendations/seeds${suffix}`);

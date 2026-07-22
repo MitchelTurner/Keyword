@@ -290,11 +290,14 @@ export class DataForSeoService {
   async discoverRecommendedSeeds(opts?: {
     minVolume?: number;
     maxCompetition?: number;
+    /** Keep only Ads CPC at or below this (USD). */
+    maxCpc?: number;
     forceRefresh?: boolean;
   }): Promise<ApiSeedCandidate[]> {
     const minVolume = opts?.minVolume ?? RECOMMENDED_SEED_MIN_VOLUME;
     const maxCompetition =
       opts?.maxCompetition ?? RECOMMENDED_SEED_MAX_COMPETITION;
+    const maxCpc = opts?.maxCpc;
     const ttlMs = 6 * 60 * 60 * 1000;
 
     if (
@@ -302,7 +305,12 @@ export class DataForSeoService {
       this.seedDiscoveryCache &&
       this.seedDiscoveryCache.expiresAt > Date.now()
     ) {
-      return this.seedDiscoveryCache.candidates;
+      return this.applyMaxCpcFilter(
+        this.seedDiscoveryCache.candidates,
+        maxCpc,
+        minVolume,
+        maxCompetition,
+      );
     }
 
     const candidates: ApiSeedCandidate[] = [];
@@ -382,6 +390,7 @@ export class DataForSeoService {
         forceRefresh: Boolean(opts?.forceRefresh),
         minVolume,
         maxCompetition,
+        maxCpc: maxCpc ?? null,
       }),
     );
 
@@ -395,7 +404,31 @@ export class DataForSeoService {
       expiresAt: Date.now() + ttlMs,
       candidates: refined,
     };
-    return refined;
+    return this.applyMaxCpcFilter(
+      refined,
+      maxCpc,
+      minVolume,
+      maxCompetition,
+    );
+  }
+
+  private applyMaxCpcFilter(
+    candidates: ApiSeedCandidate[],
+    maxCpc: number | undefined,
+    minVolume: number,
+    maxCompetition: number,
+  ): ApiSeedCandidate[] {
+    if (maxCpc == null) return candidates;
+    const cheap = candidates.filter(
+      (c) => c.cpc != null && !Number.isNaN(c.cpc) && c.cpc <= maxCpc,
+    );
+    if (cheap.length === 0) {
+      throw new Error(
+        `No keywords with CPC ≤ $${maxCpc.toFixed(2)} (volume ≥ ${minVolume}, competition ≤ ${Math.round(maxCompetition * 100)}%). Try Search new seeds first, or raise the CPC ceiling.`,
+      );
+    }
+    // Prefer pennies: cheapest first within the cached set.
+    return [...cheap].sort((a, b) => (a.cpc ?? 99) - (b.cpc ?? 99));
   }
 
   /**

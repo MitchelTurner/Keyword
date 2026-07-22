@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import {
   MIN_KEYWORD_VOLUME,
+  RECOMMENDED_SEED_MAX_CPC,
   analyzeOpportunityTrend,
   buildRecommendations,
   estimateRunCost,
@@ -20,6 +21,8 @@ import {
   type UpdateNicheAssumptionsDto,
   type UpdateOpportunityDto,
 } from "@prospector/shared";
+
+export type SeedSearchMode = "default" | "low_cpc";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
@@ -38,6 +41,8 @@ export type RecommendationsPayload = ReturnType<typeof buildRecommendations> & {
   searching?: boolean;
   jobId?: string | null;
   progress?: string;
+  mode?: SeedSearchMode;
+  maxCpc?: number | null;
   diagnostics?: {
     discovered: number;
     afterRejectList: number;
@@ -50,6 +55,7 @@ type SeedSearchJob = {
   id: string;
   status: "idle" | "running" | "done" | "error";
   progress: string;
+  mode: SeedSearchMode;
   error?: string;
   result?: RecommendationsPayload;
   updatedAt: number;
@@ -89,6 +95,7 @@ export class NichesService {
     id: "",
     status: "idle",
     progress: "",
+    mode: "default",
     updatedAt: Date.now(),
   };
 
@@ -427,10 +434,13 @@ export class NichesService {
     return { count: items.length, items };
   }
 
-  async recommendations(opts: { forceRefresh?: boolean } = {}) {
+  async recommendations(
+    opts: { forceRefresh?: boolean; mode?: SeedSearchMode } = {},
+  ) {
+    const mode = opts.mode ?? "default";
     // Legacy ?refresh=true still works but prefers the async job path.
     if (opts.forceRefresh) {
-      return this.startRecommendationsRefresh();
+      return this.startRecommendationsRefresh({ mode });
     }
 
     if (this.seedJob.status === "running") {
@@ -442,10 +452,17 @@ export class NichesService {
         searching: true,
         jobId: this.seedJob.id,
         progress: this.seedJob.progress,
+        mode: this.seedJob.mode,
+        maxCpc:
+          this.seedJob.mode === "low_cpc" ? RECOMMENDED_SEED_MAX_CPC : null,
       };
     }
 
-    if (this.seedJob.status === "done" && this.seedJob.result) {
+    if (
+      this.seedJob.status === "done" &&
+      this.seedJob.result &&
+      this.seedJob.mode === mode
+    ) {
       return {
         ...this.seedJob.result,
         searching: false,
@@ -456,11 +473,13 @@ export class NichesService {
     return this.buildRecommendationsPayload({
       forceRefresh: false,
       attachSerp: false,
+      mode,
     });
   }
 
   /** Start a background seed search (POST /recommendations/refresh). */
-  startRecommendationsRefresh() {
+  startRecommendationsRefresh(opts: { mode?: SeedSearchMode } = {}) {
+    const mode = opts.mode ?? "default";
     if (this.seedJob.status === "running") {
       return {
         niches: this.seedJob.result?.niches ?? [],
@@ -469,6 +488,9 @@ export class NichesService {
         searching: true,
         jobId: this.seedJob.id,
         progress: this.seedJob.progress,
+        mode: this.seedJob.mode,
+        maxCpc:
+          this.seedJob.mode === "low_cpc" ? RECOMMENDED_SEED_MAX_CPC : null,
       };
     }
 
@@ -476,12 +498,16 @@ export class NichesService {
     this.seedJob = {
       id,
       status: "running",
-      progress: "Discovering keywords…",
+      progress:
+        mode === "low_cpc"
+          ? "Discovering low-CPC keywords…"
+          : "Discovering keywords…",
+      mode,
       result: this.seedJob.result,
       updatedAt: Date.now(),
     };
 
-    void this.runRecommendationsRefresh(id);
+    void this.runRecommendationsRefresh(id, mode);
 
     return {
       niches: this.seedJob.result?.niches ?? [],
@@ -490,6 +516,8 @@ export class NichesService {
       searching: true,
       jobId: id,
       progress: this.seedJob.progress,
+      mode,
+      maxCpc: mode === "low_cpc" ? RECOMMENDED_SEED_MAX_CPC : null,
     };
   }
 
@@ -498,6 +526,7 @@ export class NichesService {
       jobId: this.seedJob.id || null,
       status: this.seedJob.status,
       progress: this.seedJob.progress,
+      mode: this.seedJob.mode,
       error: this.seedJob.error ?? null,
       updatedAt: this.seedJob.updatedAt,
       result:
@@ -505,12 +534,21 @@ export class NichesService {
     };
   }
 
-  private async runRecommendationsRefresh(jobId: string) {
+  private async runRecommendationsRefresh(
+    jobId: string,
+    mode: SeedSearchMode,
+  ) {
     try {
-      this.patchSeedJob(jobId, { progress: "Discovering keywords…" });
+      this.patchSeedJob(jobId, {
+        progress:
+          mode === "low_cpc"
+            ? "Discovering low-CPC keywords…"
+            : "Discovering keywords…",
+      });
       const result = await this.buildRecommendationsPayload({
         forceRefresh: true,
         attachSerp: true,
+        mode,
         onProgress: (progress) => this.patchSeedJob(jobId, { progress }),
       });
       if (this.seedJob.id !== jobId) return;
@@ -518,6 +556,7 @@ export class NichesService {
         id: jobId,
         status: "done",
         progress: "Done",
+        mode,
         result,
         updatedAt: Date.now(),
       };
@@ -529,6 +568,7 @@ export class NichesService {
         id: jobId,
         status: "error",
         progress: "Failed",
+        mode,
         error: message,
         updatedAt: Date.now(),
       };
@@ -543,8 +583,12 @@ export class NichesService {
   private async buildRecommendationsPayload(opts: {
     forceRefresh: boolean;
     attachSerp: boolean;
+    mode?: SeedSearchMode;
     onProgress?: (progress: string) => void;
   }): Promise<RecommendationsPayload> {
+    const mode = opts.mode ?? "default";
+    const maxCpc = mode === "low_cpc" ? RECOMMENDED_SEED_MAX_CPC : undefined;
+
     const niches = await this.prisma.niche.findMany({
       select: { seedTerm: true },
     });
@@ -564,9 +608,14 @@ export class NichesService {
     let afterAi = 0;
 
     try {
-      opts.onProgress?.("Querying DataForSEO…");
+      opts.onProgress?.(
+        mode === "low_cpc"
+          ? "Querying DataForSEO for cheap CPC niches…"
+          : "Querying DataForSEO…",
+      );
       apiCandidates = await this.dataForSeo.discoverRecommendedSeeds({
         forceRefresh: opts.forceRefresh,
+        maxCpc,
       });
       discovered = apiCandidates.length;
     } catch (err) {
@@ -610,16 +659,32 @@ export class NichesService {
       (c) => !rejectedSet.has(c.term.trim().toLowerCase()),
     );
 
-    opts.onProgress?.("Ranking recommendations…");
+    opts.onProgress?.(
+      mode === "low_cpc"
+        ? "Ranking cheapest CPC seeds…"
+        : "Ranking recommendations…",
+    );
     const built = buildRecommendations({
       existingSeeds,
       apiCandidates,
       shuffle: opts.forceRefresh,
+      maxCpc,
+      preferLowCpc: mode === "low_cpc",
     });
 
     let keywords = built.keywords.filter(
       (k) => !rejectedSet.has(k.term.trim().toLowerCase()),
     );
+
+    // In low-CPC mode, surface the cheapest clicks first across categories.
+    if (mode === "low_cpc") {
+      keywords = [...keywords].sort((a, b) => {
+        const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
+        const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
+        if (cpcA !== cpcB) return cpcA - cpcB;
+        return (b.volume ?? 0) - (a.volume ?? 0);
+      });
+    }
 
     if (opts.attachSerp && keywords.length > 0) {
       opts.onProgress?.("Checking SERP for top picks…");
@@ -634,7 +699,12 @@ export class NichesService {
     };
 
     this.logger.log(
-      JSON.stringify({ event: "seed_recommendations", ...diagnostics }),
+      JSON.stringify({
+        event: "seed_recommendations",
+        mode,
+        maxCpc: maxCpc ?? null,
+        ...diagnostics,
+      }),
     );
 
     return {
@@ -644,6 +714,8 @@ export class NichesService {
       aiReviewError,
       searching: false,
       jobId: this.seedJob.id || null,
+      mode,
+      maxCpc: maxCpc ?? null,
       diagnostics,
     };
   }
@@ -774,6 +846,7 @@ export class NichesService {
   async searchSeeds(dto: SearchSeedKeywordsDto) {
     const minVolume = Math.max(dto.minVolume, MIN_KEYWORD_VOLUME);
     const maxCompetition = dto.maxCompetition;
+    const maxCpc = dto.maxCpc;
     const limit = dto.limit;
     const q = dto.q.trim();
 
@@ -786,16 +859,23 @@ export class NichesService {
       where: {
         searchVolume: { gte: minVolume },
         competition: { not: null, lte: maxCompetition },
+        ...(maxCpc != null
+          ? { cpc: { not: null, lte: maxCpc } }
+          : {}),
         ...(q
           ? { term: { contains: q, mode: "insensitive" as const } }
           : {}),
       },
-      orderBy: [{ searchVolume: "desc" }, { competition: "asc" }],
+      orderBy:
+        maxCpc != null
+          ? [{ cpc: "asc" }, { searchVolume: "desc" }]
+          : [{ searchVolume: "desc" }, { competition: "asc" }],
       take: 500,
       select: {
         term: true,
         searchVolume: true,
         competition: true,
+        cpc: true,
         nicheId: true,
         niche: { select: { seedTerm: true } },
       },
@@ -808,9 +888,10 @@ export class NichesService {
         nicheSeed: k.niche.seedTerm,
         volume: k.searchVolume,
         competition: k.competition,
+        cpc: k.cpc,
       })),
       existingSeeds,
-      { minVolume, maxCompetition, limit },
+      { minVolume, maxCompetition, maxCpc, limit },
     );
 
     return {
@@ -818,6 +899,7 @@ export class NichesService {
         q,
         minVolume,
         maxCompetition,
+        maxCpc: maxCpc ?? null,
         limit,
       },
       count: keywords.length,

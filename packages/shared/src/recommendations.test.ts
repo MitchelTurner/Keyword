@@ -7,6 +7,7 @@ import {
   isSeedablePhrase,
   phrasesTooSimilar,
   searchSeedKeywords,
+  seedLowCpcScore,
   seedOpportunityScore,
 } from "./recommendations";
 
@@ -28,6 +29,49 @@ describe("recommendations", () => {
     const cheap = seedOpportunityScore(2000, 0.2, 0.5);
     const pricey = seedOpportunityScore(2000, 0.2, 8);
     expect(pricey).toBeGreaterThan(cheap);
+  });
+
+  it("low-CPC score prefers pennies over dollar clicks", () => {
+    const pennies = seedLowCpcScore(2000, 0.2, 0.08);
+    const dollar = seedLowCpcScore(2000, 0.2, 0.95);
+    expect(pennies).toBeGreaterThan(dollar);
+  });
+
+  it("filters and ranks low-CPC API seeds cheapest first within categories", () => {
+    const picks = diversifyApiSeedRecommendations(
+      [
+        {
+          term: "cheap habit tracker free",
+          category: "Productivity",
+          probe: "habit tracker",
+          volume: 1200,
+          competition: 0.2,
+          cpc: 0.12,
+        },
+        {
+          term: "premium habit coaching app",
+          category: "Productivity",
+          probe: "habit tracker",
+          volume: 1800,
+          competition: 0.2,
+          cpc: 2.5,
+        },
+        {
+          term: "simple budget spreadsheet template",
+          category: "Fintech",
+          probe: "budget spreadsheet",
+          volume: 900,
+          competition: 0.25,
+          cpc: 0.05,
+        },
+      ],
+      [],
+      10,
+      { maxCpc: 1, preferLowCpc: true },
+    );
+    expect(picks.every((p) => (p.cpc ?? 99) <= 1)).toBe(true);
+    expect(picks.map((p) => p.term)).not.toContain("premium habit coaching app");
+    expect(picks.length).toBeGreaterThanOrEqual(2);
   });
 
   it("biases topic probes toward software and tools", () => {

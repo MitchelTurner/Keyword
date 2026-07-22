@@ -224,6 +224,7 @@ export type FollowOnCandidate = {
   nicheSeed: string;
   volume: number | null;
   competition?: number | null;
+  cpc?: number | null;
 };
 
 export type ApiSeedCandidate = {
@@ -246,6 +247,9 @@ export const RECOMMENDED_SEED_MIN_VOLUME = 500;
  * 0.50 still filters out crowded head terms while keeping workable long-tails.
  */
 export const RECOMMENDED_SEED_MAX_COMPETITION = 0.5;
+
+/** Default ceiling for low-CPC seed search (USD). Prefer pennies when ranking. */
+export const RECOMMENDED_SEED_MAX_CPC = 1;
 
 /** Head terms used as discovery probes — usually crowded; never recommend these. */
 export function blockedProbeSeeds(): Set<string> {
@@ -287,6 +291,27 @@ export function seedOpportunityScore(
       : Math.min(1, Math.max(0, competition));
   const cpcBoost = 1 + Math.log10(1 + Math.max(0, cpc ?? 0));
   return Math.log10(vol + 1) * (1.05 - comp) * cpcBoost;
+}
+
+/**
+ * Rank for low-CPC hunting: high volume + low competition + cheapest clicks.
+ * A few cents/click scores far above ~$1 CPC.
+ */
+export function seedLowCpcScore(
+  volume: number | null | undefined,
+  competition: number | null | undefined,
+  cpc?: number | null | undefined,
+): number {
+  const vol = Math.max(0, volume ?? 0);
+  if (vol <= 0) return 0;
+  if (cpc == null || Number.isNaN(cpc) || cpc < 0) return 0;
+  const comp =
+    competition == null
+      ? 0.55
+      : Math.min(1, Math.max(0, competition));
+  // 1/(0.05+cpc): $0.05 → ~10×, $0.25 → ~4×, $1 → ~1×
+  const cheapBoost = 1 / (0.05 + cpc);
+  return Math.log10(vol + 1) * (1.05 - comp) * cheapBoost;
 }
 
 function competitionLabel(competition: number | null | undefined): string {
@@ -331,7 +356,13 @@ export function diversifyApiSeedRecommendations(
   candidates: ApiSeedCandidate[],
   existingSeeds: string[],
   limit = 24,
-  opts: { shuffle?: boolean } = {},
+  opts: {
+    shuffle?: boolean;
+    /** When set, only keep seeds with Ads CPC at or below this (USD). */
+    maxCpc?: number;
+    /** Prefer cheapest clicks instead of high-CPC commercial value. */
+    preferLowCpc?: boolean;
+  } = {},
 ): RecommendationKeyword[] {
   const used = new Set(existingSeeds.map(normalizeTerm));
   const byCategory = new Map<
@@ -340,6 +371,8 @@ export function diversifyApiSeedRecommendations(
   >();
 
   const blocked = blockedProbeSeeds();
+  const maxCpc = opts.maxCpc;
+  const preferLowCpc = Boolean(opts.preferLowCpc || maxCpc != null);
 
   for (const c of candidates) {
     if (!isSeedablePhrase(c.term)) continue;
@@ -358,7 +391,12 @@ export function diversifyApiSeedRecommendations(
     ) {
       continue;
     }
-    const score = seedOpportunityScore(c.volume, c.competition, c.cpc);
+    if (maxCpc != null) {
+      if (c.cpc == null || Number.isNaN(c.cpc) || c.cpc > maxCpc) continue;
+    }
+    const score = preferLowCpc
+      ? seedLowCpcScore(c.volume, c.competition, c.cpc)
+      : seedOpportunityScore(c.volume, c.competition, c.cpc);
     const list = byCategory.get(c.category) ?? [];
     list.push({ ...c, score });
     byCategory.set(c.category, list);
@@ -398,7 +436,9 @@ export function diversifyApiSeedRecommendations(
         if (pickedTerms.some((t) => phrasesTooSimilar(t, c.term))) continue;
         if (picked.some((p) => normalizeTerm(p.term) === key)) continue;
         const cpcBit =
-          c.cpc != null && c.cpc > 0 ? ` · $${c.cpc.toFixed(2)} CPC` : "";
+          c.cpc != null && c.cpc >= 0
+            ? ` · $${c.cpc < 1 ? c.cpc.toFixed(2) : c.cpc.toFixed(2)} CPC`
+            : "";
         picked.push({
           term: c.term,
           source: "api",
@@ -409,7 +449,9 @@ export function diversifyApiSeedRecommendations(
           cpc: c.cpc ?? null,
           score: c.score,
           aiReason: c.aiReason,
-          reason: `${c.category} · ${competitionLabel(c.competition)} · ${Math.round(c.volume ?? 0).toLocaleString()}/mo${cpcBit}`,
+          reason: preferLowCpc
+            ? `Low CPC · ${c.category} · ${competitionLabel(c.competition)} · ${Math.round(c.volume ?? 0).toLocaleString()}/mo${cpcBit}`
+            : `${c.category} · ${competitionLabel(c.competition)} · ${Math.round(c.volume ?? 0).toLocaleString()}/mo${cpcBit}`,
         });
         pickedTerms.push(c.term);
         added = true;
@@ -431,11 +473,14 @@ export function searchSeedKeywords(
   opts: {
     minVolume?: number;
     maxCompetition?: number;
+    maxCpc?: number;
     limit?: number;
   } = {},
 ): RecommendationKeyword[] {
   const minVolume = opts.minVolume ?? RECOMMENDED_SEED_MIN_VOLUME;
   const maxCompetition = opts.maxCompetition ?? RECOMMENDED_SEED_MAX_COMPETITION;
+  const maxCpc = opts.maxCpc;
+  const preferLowCpc = maxCpc != null;
   const limit = opts.limit ?? 40;
   const used = new Set(existingSeeds.map(normalizeTerm));
   const best = new Map<string, FollowOnCandidate & { score: number }>();
@@ -448,8 +493,13 @@ export function searchSeedKeywords(
     const volume = c.volume ?? 0;
     if (volume < minVolume) continue;
     if (c.competition == null || c.competition > maxCompetition) continue;
+    if (maxCpc != null) {
+      if (c.cpc == null || Number.isNaN(c.cpc) || c.cpc > maxCpc) continue;
+    }
 
-    const score = seedOpportunityScore(c.volume, c.competition, null);
+    const score = preferLowCpc
+      ? seedLowCpcScore(c.volume, c.competition, c.cpc)
+      : seedOpportunityScore(c.volume, c.competition, c.cpc ?? null);
     const prev = best.get(key);
     if (!prev || score > prev.score) {
       best.set(key, { ...c, score });
@@ -458,6 +508,11 @@ export function searchSeedKeywords(
 
   return [...best.values()]
     .sort((a, b) => {
+      if (preferLowCpc) {
+        const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
+        const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
+        if (cpcA !== cpcB) return cpcA - cpcB;
+      }
       if (b.score !== a.score) return b.score - a.score;
       if ((b.volume ?? 0) !== (a.volume ?? 0)) {
         return (b.volume ?? 0) - (a.volume ?? 0);
@@ -472,8 +527,11 @@ export function searchSeedKeywords(
       nicheSeed: c.nicheSeed,
       volume: c.volume,
       competition: c.competition ?? null,
+      cpc: c.cpc ?? null,
       score: c.score,
-      reason: `${competitionLabel(c.competition)}, ${Math.round(c.volume ?? 0).toLocaleString()}/mo from “${c.nicheSeed}”`,
+      reason: preferLowCpc
+        ? `$${((c.cpc ?? 0)).toFixed(2)} CPC · ${competitionLabel(c.competition)} · ${Math.round(c.volume ?? 0).toLocaleString()}/mo from “${c.nicheSeed}”`
+        : `${competitionLabel(c.competition)}, ${Math.round(c.volume ?? 0).toLocaleString()}/mo from “${c.nicheSeed}”`,
     }));
 }
 
@@ -487,13 +545,20 @@ export function buildRecommendations(input: {
   apiCandidates?: ApiSeedCandidate[];
   /** Shuffle category order for a fresher mix (e.g. after "Search new seeds"). */
   shuffle?: boolean;
+  /** Low-CPC mode: keep CPC ≤ maxCpc and rank cheapest clicks first. */
+  maxCpc?: number;
+  preferLowCpc?: boolean;
 }) {
   const existing = input.existingSeeds;
   const seeds = diversifyApiSeedRecommendations(
     input.apiCandidates ?? [],
     existing,
     24,
-    { shuffle: input.shuffle },
+    {
+      shuffle: input.shuffle,
+      maxCpc: input.maxCpc,
+      preferLowCpc: input.preferLowCpc ?? input.maxCpc != null,
+    },
   );
 
   return {

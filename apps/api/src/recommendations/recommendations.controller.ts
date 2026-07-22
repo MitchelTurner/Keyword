@@ -14,22 +14,37 @@ import {
   type SearchSeedKeywordsDto,
 } from "@prospector/shared";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
-import { NichesService } from "../niches/niches.service";
+import {
+  NichesService,
+  type SeedSearchMode,
+} from "../niches/niches.service";
+
+function parseMode(raw?: string): SeedSearchMode {
+  return raw === "low_cpc" ? "low_cpc" : "default";
+}
 
 @Controller("recommendations")
 export class RecommendationsController {
   constructor(private readonly niches: NichesService) {}
 
   @Get()
-  list(@Query("refresh") refresh?: string) {
+  list(
+    @Query("refresh") refresh?: string,
+    @Query("mode") mode?: string,
+  ) {
     const forceRefresh = refresh === "1" || refresh === "true";
-    return this.niches.recommendations({ forceRefresh });
+    return this.niches.recommendations({
+      forceRefresh,
+      mode: parseMode(mode),
+    });
   }
 
-  /** Kick off an async seed search used by the "Search new seeds" button. */
+  /** Kick off an async seed search used by the search buttons. */
   @Post("refresh")
-  refresh() {
-    return this.niches.startRecommendationsRefresh();
+  refresh(@Query("mode") mode?: string, @Body() body?: { mode?: string }) {
+    return this.niches.startRecommendationsRefresh({
+      mode: parseMode(mode ?? body?.mode),
+    });
   }
 
   /** Poll status / result for the latest seed search job. */

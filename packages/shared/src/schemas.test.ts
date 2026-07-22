@@ -41,12 +41,14 @@ describe("SearchSeedKeywordsSchema", () => {
         q: " cleaning ",
         minVolume: "1000",
         maxCompetition: "0.3",
+        maxCpc: "1",
         limit: "20",
       }),
     ).toEqual({
       q: "cleaning",
       minVolume: 1000,
       maxCompetition: 0.3,
+      maxCpc: 1,
       limit: 20,
     });
   });

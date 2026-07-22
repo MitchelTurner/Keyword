@@ -32,8 +32,8 @@ describe("recommendations", () => {
 
   it("biases topic probes toward software and tools", () => {
     const seeds = TOPIC_PROBES.map((p) => p.seed.toLowerCase()).join(" ");
-    expect(seeds).toMatch(/software|app|tool|calculator|platform/);
-    expect(seeds).not.toMatch(/lawyer|plumber|dentist|doctor/);
+    expect(seeds).toMatch(/software|app|tool|calculator|platform|crm|seo/);
+    expect(seeds).not.toMatch(/\blawyer\b|\bplumber\b|\bdentist\b|\bdoctor\b/);
   });
 
   it("diversifies API seeds across categories", () => {

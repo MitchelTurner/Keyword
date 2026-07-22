@@ -162,31 +162,36 @@ export const CURATED_NICHES: CuratedNiche[] = [
 
 /**
  * Probe seeds biased toward buildable software / tools / content niches
- * (not licensed professions or pure local services).
+ * (not licensed professions or pure local services). Mix head + commercial
+ * angles so Labs returns enough low/medium-comp long-tails.
  */
 export const TOPIC_PROBES: Array<{
   id: string;
   category: string;
   seed: string;
 }> = [
-  { id: "billing", category: "SaaS", seed: "invoice software" },
-  { id: "crm", category: "SaaS", seed: "crm software" },
-  { id: "scheduling", category: "SaaS", seed: "appointment scheduling software" },
-  { id: "habits", category: "Productivity", seed: "habit tracker app" },
+  { id: "billing", category: "SaaS", seed: "invoicing software" },
+  { id: "crm", category: "SaaS", seed: "small business crm" },
+  { id: "scheduling", category: "SaaS", seed: "appointment booking software" },
+  { id: "habits", category: "Productivity", seed: "habit tracker" },
   { id: "meal", category: "Food tech", seed: "meal planning app" },
-  { id: "budget", category: "Fintech", seed: "budget tracker app" },
+  { id: "budget", category: "Fintech", seed: "budget spreadsheet" },
   { id: "hoa", category: "Proptech", seed: "hoa management software" },
-  { id: "dental", category: "Health tech", seed: "dental practice software" },
-  { id: "legal-tech", category: "Legal tech", seed: "law firm billing software" },
-  { id: "ecommerce", category: "Ecommerce", seed: "shopify inventory app" },
+  { id: "dental", category: "Health tech", seed: "dental practice management" },
+  { id: "legal-tech", category: "Legal tech", seed: "legal billing software" },
+  { id: "ecommerce", category: "Ecommerce", seed: "inventory management software" },
   { id: "education", category: "Edtech", seed: "online course platform" },
-  { id: "content", category: "Content", seed: "newsletter tools" },
-  { id: "seo", category: "Marketing", seed: "keyword research tool" },
-  { id: "hr", category: "HR tech", seed: "employee scheduling software" },
-  { id: "pets", category: "Pets", seed: "pet sitting software" },
-  { id: "fitness", category: "Fitness tech", seed: "workout planner app" },
-  { id: "rentals", category: "Proptech", seed: "rental property management software" },
+  { id: "content", category: "Content", seed: "newsletter software" },
+  { id: "seo", category: "Marketing", seed: "seo tools" },
+  { id: "hr", category: "HR tech", seed: "employee scheduling app" },
+  { id: "pets", category: "Pets", seed: "pet sitting app" },
+  { id: "fitness", category: "Fitness tech", seed: "workout tracker" },
+  { id: "rentals", category: "Proptech", seed: "property management software" },
   { id: "tools", category: "Tools", seed: "mortgage calculator" },
+  { id: "affiliate", category: "Content", seed: "affiliate marketing tools" },
+  { id: "forms", category: "SaaS", seed: "online form builder" },
+  { id: "ai-writing", category: "AI tools", seed: "ai writing assistant" },
+  { id: "podcast", category: "Content", seed: "podcast hosting" },
 ];
 
 export type SerpPreviewItem = {
@@ -236,8 +241,11 @@ export const MAX_RECOMMENDED_COMPETITION = 0.75;
 
 /** Live recommended-seed thresholds. */
 export const RECOMMENDED_SEED_MIN_VOLUME = 500;
-/** Ads competition_index / 100 — keep only clearly low-comp niches. */
-export const RECOMMENDED_SEED_MAX_COMPETITION = 0.35;
+/**
+ * Ads competition_index / 100. 0.35 starved software niches (few Ads LOW hits);
+ * 0.50 still filters out crowded head terms while keeping workable long-tails.
+ */
+export const RECOMMENDED_SEED_MAX_COMPETITION = 0.5;
 
 /** Head terms used as discovery probes — usually crowded; never recommend these. */
 export function blockedProbeSeeds(): Set<string> {

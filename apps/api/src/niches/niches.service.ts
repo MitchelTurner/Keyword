@@ -37,6 +37,13 @@ export type RecommendationsPayload = ReturnType<typeof buildRecommendations> & {
   aiReviewError?: string;
   searching?: boolean;
   jobId?: string | null;
+  progress?: string;
+  diagnostics?: {
+    discovered: number;
+    afterRejectList: number;
+    afterAi: number;
+    recommended: number;
+  };
 };
 
 type SeedSearchJob = {
@@ -552,12 +559,16 @@ export class NichesService {
 
     let apiCandidates: ApiSeedCandidate[] = [];
     let aiReviewError: string | undefined;
+    let discovered = 0;
+    let afterRejectList = 0;
+    let afterAi = 0;
 
     try {
       opts.onProgress?.("Querying DataForSEO…");
       apiCandidates = await this.dataForSeo.discoverRecommendedSeeds({
         forceRefresh: opts.forceRefresh,
       });
+      discovered = apiCandidates.length;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Live seed discovery failed: ${message}`);
@@ -570,6 +581,7 @@ export class NichesService {
     apiCandidates = apiCandidates.filter(
       (c) => !rejectedSet.has(c.term.trim().toLowerCase()),
     );
+    afterRejectList = apiCandidates.length;
 
     // AI gate — fail closed: never surface unreviewed volume/comp seeds.
     if (apiCandidates.length > 0) {
@@ -579,11 +591,13 @@ export class NichesService {
           apiCandidates,
           opts.forceRefresh,
         );
+        afterAi = apiCandidates.length;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.logger.warn(`AI monetization review failed: ${message}`);
         aiReviewError = message;
         apiCandidates = [];
+        afterAi = 0;
         if (opts.forceRefresh) {
           throw new BadRequestException(
             `AI review unavailable — seeds not shown without review: ${message}`,
@@ -612,6 +626,17 @@ export class NichesService {
       keywords = await this.attachSerpPreviews(keywords, 5);
     }
 
+    const diagnostics = {
+      discovered,
+      afterRejectList,
+      afterAi,
+      recommended: keywords.length,
+    };
+
+    this.logger.log(
+      JSON.stringify({ event: "seed_recommendations", ...diagnostics }),
+    );
+
     return {
       ...built,
       keywords,
@@ -619,6 +644,7 @@ export class NichesService {
       aiReviewError,
       searching: false,
       jobId: this.seedJob.id || null,
+      diagnostics,
     };
   }
 

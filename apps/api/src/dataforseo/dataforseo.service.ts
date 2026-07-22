@@ -314,8 +314,8 @@ export class DataForSeoService {
       [probes[i], probes[j]] = [probes[j]!, probes[i]!];
     }
     const selectedProbes = opts?.forceRefresh
-      ? probes.slice(0, 8)
-      : probes.slice(0, 12);
+      ? probes.slice(0, 12)
+      : probes.slice(0, 16);
 
     // Parallel probe calls (bounded) — much faster than serial batches.
     const concurrency = 6;
@@ -368,7 +368,7 @@ export class DataForSeoService {
     }
     const shortlist = [...bestByTerm.values()]
       .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
-      .slice(0, opts?.forceRefresh ? 40 : 60);
+      .slice(0, opts?.forceRefresh ? 50 : 80);
 
     const refined = await this.refineSeedCompetition(shortlist, maxCompetition);
 
@@ -387,7 +387,7 @@ export class DataForSeoService {
 
     if (refined.length === 0) {
       throw new Error(
-        "No keywords passed volume ≥ 500 and competition ≤ 35% after Ads refine",
+        `No keywords passed volume ≥ ${minVolume} and competition ≤ ${Math.round(maxCompetition * 100)}% after Ads refine`,
       );
     }
 
@@ -520,20 +520,17 @@ export class DataForSeoService {
   ): Promise<
     Array<{ term: string; volume: number | null; competition: number | null }>
   > {
-    // Filter by LOW competition_level in Labs; refine to competition_index after.
+    // Volume-only in Labs — LOW-only starved software niches. Ads refine is the
+    // real competition gate (competition_index).
     const payload = [
       {
         keywords: [seed],
         location_code: this.locationCode(),
         language_code: this.languageCode(),
         closely_variants: false,
-        filters: [
-          ["keyword_info.search_volume", ">=", minVolume],
-          "and",
-          ["keyword_info.competition_level", "=", "LOW"],
-        ],
+        filters: [["keyword_info.search_volume", ">=", minVolume]],
         order_by: ["keyword_info.search_volume,desc"],
-        limit: 30,
+        limit: 40,
       },
     ];
 

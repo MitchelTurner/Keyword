@@ -129,14 +129,25 @@ export default function NicheListPage() {
         const job = await api.recommendationsJob();
         setSearchProgress(job.progress || undefined);
         if (job.status === "done") {
-          if (job.result) setRecs(job.result);
-          else setRecs(await api.recommendations());
-          if ((job.result?.keywords.length ?? 0) === 0) {
-            setError(
-              job.result?.aiReviewError
-                ? `AI review blocked results: ${job.result.aiReviewError}`
-                : "Search finished but found no buildable seeds. Try again.",
-            );
+          const result = job.result ?? (await api.recommendations());
+          setRecs(result);
+          if ((result.keywords?.length ?? 0) === 0) {
+            const d = result.diagnostics;
+            if (result.aiReviewError) {
+              setError(`AI review blocked results: ${result.aiReviewError}`);
+            } else if (d && d.discovered > 0 && d.afterAi === 0) {
+              setError(
+                `Found ${d.discovered} volume/competition candidates, but AI rejected all as not buildable/monetizable. Try again for a new mix.`,
+              );
+            } else if (d && d.discovered === 0) {
+              setError(
+                "DataForSEO returned no candidates under the volume/competition filters. Try again.",
+              );
+            } else {
+              setError(
+                "Search finished but found no buildable seeds. Try again.",
+              );
+            }
           }
           return;
         }
@@ -243,6 +254,11 @@ export default function NicheListPage() {
         searching={searchingSeeds}
         progress={searchProgress}
         aiReviewError={recs?.aiReviewError}
+        emptyHint={
+          recs?.diagnostics && recs.diagnostics.discovered > 0
+            ? `Last search: ${recs.diagnostics.discovered} candidates → ${recs.diagnostics.afterAi} AI-approved → ${recs.diagnostics.recommended} shown.`
+            : undefined
+        }
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">

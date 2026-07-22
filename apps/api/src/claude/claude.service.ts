@@ -70,20 +70,20 @@ Rules:
 
 const SEED_MONETIZE_SYSTEM = `You review seed keywords for a solo founder / indie hacker who wants to build a website or software product that can monetize relatively easily (SaaS, tools, directories, content sites with clear monetization, digital products, marketplaces, lead-gen sites they can operate).
 
-Approve ONLY keywords where someone without a professional license could plausibly ship a digital product or content business around the demand.
+Approve keywords where someone without a professional license could plausibly ship a digital product or content business around the demand.
 
 REJECT examples (do not approve):
-- Licensed / in-person professions as the product itself: doctor, dentist, lawyer, attorney, CPA, therapist, plumber as a service business you must perform
-- Pure local "near me" fulfillment that requires being on-site
+- Licensed / in-person professions as the product itself: doctor, dentist, lawyer, attorney, CPA, therapist, plumber as a service YOU perform
+- Pure local "near me" fulfillment that requires being on-site (e.g. "emergency plumber near me")
 - Job-seeking / hiring-only intent with no product angle
 - Brand-only terms with no productizable niche
 - Illegal, adult, or scammy topics
 
-APPROVE examples:
-- Software/tools: invoice software, habit tracker app, meal planning app
+APPROVE examples (be generous with these):
+- Software/tools/apps/platforms/calculators/builders
 - Vertical software ABOUT a profession (not being the profession): medical billing software, law firm CRM, dental practice scheduling
-- Directories, comparison sites, calculators, niche content + affiliate/ads with clear monetization
-- Digital products / templates / courses around a skill (not requiring you to be a licensed practitioner)
+- Directories, comparison sites, niche content + affiliate/ads, newsletters, templates, courses
+- Ecommerce tooling, inventory, booking, CRM, SEO, AI assistants, podcast hosting
 
 Respond ONLY with JSON:
 {"reviews":[{"keyword":string,"approve":boolean,"reason":string}]}

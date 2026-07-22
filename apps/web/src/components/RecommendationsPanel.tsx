@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { RECOMMENDED_SEED_MAX_COMPETITION } from "@prospector/shared";
 import type { RecommendedKeyword, RecommendedNiche } from "../api";
 import { num } from "../api";
 import Panel from "./Panel";
@@ -37,6 +38,7 @@ export default function RecommendationsPanel({
   searching = false,
   progress,
   aiReviewError,
+  emptyHint,
 }: {
   niches: RecommendedNiche[];
   keywords: RecommendedKeyword[];
@@ -47,6 +49,7 @@ export default function RecommendationsPanel({
   searching?: boolean;
   progress?: string;
   aiReviewError?: string;
+  emptyHint?: string;
 }) {
   const apiSeeds = useMemo(() => {
     const selected = selectedSeed.trim().toLowerCase();
@@ -55,7 +58,7 @@ export default function RecommendationsPanel({
         k.source === "api" &&
         k.term.trim().toLowerCase() !== selected &&
         k.competition != null &&
-        k.competition <= 0.35,
+        k.competition <= RECOMMENDED_SEED_MAX_COMPETITION,
     );
   }, [keywords, selectedSeed]);
 
@@ -91,7 +94,8 @@ export default function RecommendationsPanel({
                 "Searching DataForSEO and AI-reviewing niches — this can take a minute…"
               : aiReviewError
                 ? `AI review unavailable — seeds hidden until review works. ${aiReviewError}`
-                : "No buildable niches yet. Click Search new seeds (volume ≥ 500, competition ≤ 35%, then AI filters out professions like “doctor”)."}
+                : emptyHint ||
+                  "No buildable niches yet. Click Search new seeds (volume ≥ 500, competition ≤ 45%, AI filters out professions like “doctor”)."}
           </p>
           {searchButton}
         </div>
@@ -119,7 +123,7 @@ export default function RecommendationsPanel({
       hint={
         searching
           ? progress || "Searching live API + AI review for a fresh mix…"
-          : `${apiSeeds.length} AI-reviewed niches · volume ≥ 500 · competition ≤ 35%`
+          : `${apiSeeds.length} AI-reviewed niches · volume ≥ 500 · competition ≤ ${Math.round(RECOMMENDED_SEED_MAX_COMPETITION * 100)}%`
       }
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

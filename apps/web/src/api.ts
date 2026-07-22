@@ -207,6 +207,13 @@ export type RecommendedKeyword = {
   serp?: SerpPreviewItem[];
 };
 
+export type SeedSearchDiagnostics = {
+  discovered: number;
+  afterRejectList: number;
+  afterAi: number;
+  recommended: number;
+};
+
 export type RecommendationsResponse = {
   niches: RecommendedNiche[];
   keywords: RecommendedKeyword[];
@@ -215,6 +222,7 @@ export type RecommendationsResponse = {
   searching?: boolean;
   jobId?: string | null;
   progress?: string;
+  diagnostics?: SeedSearchDiagnostics;
 };
 
 export type RecommendationsJob = {

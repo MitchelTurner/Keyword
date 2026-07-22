@@ -176,6 +176,32 @@ export const RejectSeedSchema = z.object({
 });
 export type RejectSeedDto = z.infer<typeof RejectSeedSchema>;
 
+/** Suggest SEO-friendly domains for a topic and check availability. */
+export const SuggestDomainsSchema = z.object({
+  topic: z.string().trim().min(2).max(120),
+  tlds: z
+    .array(z.string().trim().min(2).max(12))
+    .min(1)
+    .max(8)
+    .optional(),
+  limit: z.coerce.number().int().min(5).max(60).optional().default(24),
+});
+export type SuggestDomainsDto = z.infer<typeof SuggestDomainsSchema>;
+
+export const ClaudeDomainIdeasSchema = z.object({
+  domains: z
+    .array(
+      z.object({
+        domain: z.string().trim().min(3).max(80),
+        keyword: z.string().trim().min(1).max(120).optional(),
+        rationale: z.string().trim().min(1).max(220),
+      }),
+    )
+    .min(1)
+    .max(40),
+});
+export type ClaudeDomainIdeas = z.infer<typeof ClaudeDomainIdeasSchema>;
+
 /** Tracked website / product whose keywords the operator monitors. */
 export const CreateTrackedSiteSchema = z.object({
   name: z.string().trim().min(1).max(120),

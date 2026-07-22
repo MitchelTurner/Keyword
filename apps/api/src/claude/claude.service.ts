@@ -3,11 +3,13 @@ import { ConfigService } from "@nestjs/config";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   ClaudeClassificationSchema,
+  ClaudeDomainIdeasSchema,
   ClaudeKeywordExpandSchema,
   ClaudeMergeSchema,
   ClaudeSeedMonetizationReviewSchema,
   ClaudeThemeBuildBriefSchema,
   type ClaudeClassification,
+  type ClaudeDomainIdeas,
   type ClaudeMerge,
   type ClaudeSeedMonetizationReview,
   type ClaudeThemeBuildBrief,
@@ -123,6 +125,25 @@ Rules:
 - reason: short (under 200 chars)
 - No markdown, no prose outside the JSON`;
 
+const DOMAIN_IDEAS_SYSTEM = `You suggest brandable domain names for a solo founder building a management platform / SaaS around a topic.
+
+Goals:
+- SEO-friendly: prefer including a meaningful keyword root when it still sounds like a brand
+- Short, memorable, pronounceable labels (ideally 6–14 chars before the TLD)
+- Prefer .com, then .io / .co / .app / .dev
+- No hyphens, no numbers, no trademarked mega-brands
+- Suitable for an ongoing management product (not a one-shot calculator)
+
+Respond ONLY with JSON:
+{"domains":[{"domain":"example.com","keyword":"related keyword","rationale":"why this fits"}]}
+
+Rules:
+- 12–24 unique domains
+- domain must include a TLD
+- keyword should be the SEO phrase the domain targets (from the topic or provided keywords)
+- rationale under 160 chars
+- No markdown, no prose outside the JSON`;
+
 const THEME_BUILD_SYSTEM = `You turn keyword research themes into concrete build briefs for a solo founder.
 
 For each theme, propose:
@@ -211,6 +232,76 @@ export class ClaudeService {
     });
 
     return this.stripFences(this.extractText(message.content));
+  }
+
+  /**
+   * Suggest brandable, SEO-aware domain names for a topic + related keywords.
+   */
+  async suggestDomains(
+    topic: string,
+    keywords: string[] = [],
+  ): Promise<ClaudeDomainIdeas["domains"]> {
+    const seed = topic.trim();
+    const uniqueKeywords = [
+      ...new Set(
+        keywords
+          .map((k) => k.trim().replace(/\s+/g, " "))
+          .filter((k) => k.length > 0),
+      ),
+    ].slice(0, 40);
+
+    const user = uniqueKeywords.length
+      ? `Topic: ${JSON.stringify(seed)}\n\nRelated SEO keywords (prefer roots from these when natural):\n${JSON.stringify(uniqueKeywords)}\n\nSuggest domain names for a management platform in this space.`
+      : `Topic: ${JSON.stringify(seed)}\n\nSuggest domain names for a management platform in this space.`;
+
+    const tryParse = (raw: string) => {
+      try {
+        return ClaudeDomainIdeasSchema.safeParse(JSON.parse(raw));
+      } catch (err) {
+        return {
+          success: false as const,
+          error: {
+            message:
+              err instanceof Error ? err.message : "JSON parse failed",
+          },
+        };
+      }
+    };
+
+    let text = await this.complete(DOMAIN_IDEAS_SYSTEM, user);
+    let parsed = tryParse(text);
+    if (!parsed.success) {
+      this.logger.warn(`Claude domain ideas parse failed, retrying once`);
+      text = await this.complete(
+        DOMAIN_IDEAS_SYSTEM,
+        `${user}\n\nPrevious response failed validation: ${parsed.error.message}. Return corrected JSON only.`,
+      );
+      parsed = tryParse(text);
+      if (!parsed.success) {
+        throw new Error(
+          `Claude domain ideas JSON invalid: ${parsed.error.message}`,
+        );
+      }
+    }
+
+    const seen = new Set<string>();
+    const out: ClaudeDomainIdeas["domains"] = [];
+    for (const row of parsed.data.domains) {
+      const domain = row.domain
+        .trim()
+        .toLowerCase()
+        .replace(/^https?:\/\//, "")
+        .replace(/\/.*$/, "");
+      if (!/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/.test(domain)) continue;
+      if (seen.has(domain)) continue;
+      seen.add(domain);
+      out.push({
+        domain,
+        keyword: row.keyword?.trim(),
+        rationale: row.rationale.trim(),
+      });
+    }
+    return out;
   }
 
   /**

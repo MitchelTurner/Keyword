@@ -62,6 +62,7 @@ async function bootstrap() {
     "/portfolio",
     "/recommendations",
     "/sites",
+    "/domains",
   ];
 
   function isApiRequest(req: Request): boolean {

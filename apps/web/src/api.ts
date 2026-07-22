@@ -304,6 +304,29 @@ export type SeedSearchResponse = {
   keywords: RecommendedKeyword[];
 };
 
+export type DomainIdea = {
+  domain: string;
+  label: string;
+  tld: string;
+  available: boolean | null;
+  availabilityMethod: string;
+  seoScore: number;
+  relatedKeyword: string | null;
+  keywordVolume: number | null;
+  rationale: string;
+  source: "ai" | "keyword";
+};
+
+export type DomainSuggestResponse = {
+  topic: string;
+  tlds: string[];
+  keywords: Array<{ term: string; volume: number | null }>;
+  count: number;
+  availableCount: number;
+  domains: DomainIdea[];
+  note: string;
+};
+
 export const api = {
   listNiches: () =>
     request<{
@@ -360,6 +383,15 @@ export const api = {
   },
   portfolio: () =>
     request<{ count: number; items: PortfolioItem[] }>("/portfolio"),
+  suggestDomains: (body: {
+    topic: string;
+    tlds?: string[];
+    limit?: number;
+  }) =>
+    request<DomainSuggestResponse>("/domains/suggest", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   listSites: () =>
     request<{ count: number; sites: TrackedSiteSummary[] }>("/sites"),
   createSite: (body: { name: string; domain?: string; notes?: string }) =>

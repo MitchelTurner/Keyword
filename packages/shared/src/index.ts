@@ -7,3 +7,4 @@ export * from "./decision";
 export * from "./recommendations";
 export * from "./keyword-relevance";
 export * from "./keyword-thresholds";
+export * from "./domains";

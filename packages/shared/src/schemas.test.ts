@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AddTrackedKeywordsSchema,
+  SuggestDomainsSchema,
   ClaudeClassificationSchema,
   ClaudeKeywordExpandSchema,
   ClaudeSeedMonetizationReviewSchema,
@@ -250,5 +251,13 @@ describe("tracked site schemas", () => {
     });
     expect(parsed.terms).toEqual(["habit tracker", "morning routine"]);
     expect(parsed.enrich).toBe(true);
+  });
+});
+
+describe("SuggestDomainsSchema", () => {
+  it("defaults limit and trims topic", () => {
+    const parsed = SuggestDomainsSchema.parse({ topic: " salon management " });
+    expect(parsed.topic).toBe("salon management");
+    expect(parsed.limit).toBe(24);
   });
 });

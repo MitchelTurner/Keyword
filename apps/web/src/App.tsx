@@ -3,6 +3,7 @@ import NicheListPage from "./pages/NicheListPage";
 import NicheDetailPage from "./pages/NicheDetailPage";
 import PortfolioPage from "./pages/PortfolioPage";
 import SitesPage from "./pages/SitesPage";
+import DomainIdeasPage from "./pages/DomainIdeasPage";
 
 function navClass({ isActive }: { isActive: boolean }) {
   return [
@@ -34,6 +35,9 @@ export default function App() {
               <NavLink to="/sites" className={navClass}>
                 My sites
               </NavLink>
+              <NavLink to="/domains" className={navClass}>
+                Domains
+              </NavLink>
               <NavLink to="/portfolio" className={navClass}>
                 Portfolio
               </NavLink>
@@ -48,6 +52,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<NicheListPage />} />
           <Route path="/sites" element={<SitesPage />} />
+          <Route path="/domains" element={<DomainIdeasPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
           <Route path="/niches/:id" element={<NicheDetailPage />} />
         </Routes>

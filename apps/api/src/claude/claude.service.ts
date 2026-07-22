@@ -94,16 +94,16 @@ Rules:
 - reason: short (under 200 chars)
 - No markdown, no prose outside the JSON`;
 
-const SEED_MONETIZE_LOW_CPC_SYSTEM = `You review HIGH-VOLUME (≥100k/mo) low-CPC seed keywords for a solo founder who wants to make money with a website or software product.
+const SEED_MONETIZE_LOW_CPC_SYSTEM = `You review solid-volume (≥5k/mo) low-CPC seed keywords for a solo founder who wants to make money with a website or software product.
 
 These keywords already cleared a cheap Ads CPC filter (≤ $1). Your job is monetization quality — not CPC.
 
-APPROVE only when there is a clear path to revenue at scale:
+APPROVE only when there is a clear path to revenue:
 - Freemium / SaaS tools & calculators people will use repeatedly
 - Affiliate or comparison content with known commercial products (finance, health, software, careers)
 - Lead-gen or directory plays with buyers on the other side
 - Digital products, templates, courses, newsletters with paid upside
-- Ad-supported tools/content where 100k+ volume makes display/native ads meaningful
+- Ad-supported tools/content where steady search volume makes display/native ads meaningful
 
 REJECT even if popular when money is unclear:
 - Pure curiosity / trivia / celebrity / meme searches with no product angle

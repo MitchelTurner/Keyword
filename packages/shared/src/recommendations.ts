@@ -194,7 +194,7 @@ export const TOPIC_PROBES: Array<{
 
 /**
  * Extra probes for low-CPC discovery — biased toward mass-market topics that
- * can clear 100k+/mo volume and still monetize (tools, affiliate, freemium).
+ * can clear solid monthly volume and still monetize (tools, affiliate, freemium).
  */
 export const LOW_CPC_TOPIC_PROBES: Array<{
   id: string;
@@ -291,10 +291,10 @@ export const RECOMMENDED_SEED_MAX_COMPETITION = 0.5;
 export const RECOMMENDED_SEED_MAX_CPC = 1;
 
 /**
- * Low-CPC mode requires serious demand: ≥ 100k monthly searches so cheap
- * clicks can still support ads / affiliate / freemium businesses.
+ * Low-CPC mode volume floor. 5k keeps demand meaningful while surfacing
+ * more monetizable cheap-click niches than a 100k cut.
  */
-export const RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME = 100_000;
+export const RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME = 5_000;
 
 /**
  * Slightly looser Ads competition for low-CPC mode. Mass-market cheap-click
@@ -349,8 +349,8 @@ export function seedOpportunityScore(
 }
 
 /**
- * Rank for low-CPC hunting: ≥100k volume first, then cheapest clicks, then
- * lower Ads competition. Pennies/click still beat ~$1 CPC at equal volume.
+ * Rank for low-CPC hunting: meet the volume floor, then prefer higher volume
+ * and cheaper clicks. Pennies/click still beat ~$1 CPC at equal volume.
  */
 export function seedLowCpcScore(
   volume: number | null | undefined,
@@ -366,9 +366,9 @@ export function seedLowCpcScore(
     competition == null
       ? 0.55
       : Math.min(1, Math.max(0, competition));
-  // Volume dominates: 100k → ~5, 500k → ~5.7, 1M → ~6
+  // Volume dominates: 5k → ~3.7, 50k → ~4.7, 500k → ~5.7
   const volFactor = Math.log10(vol + 1);
-  // Extra lift as volume scales past the 100k floor.
+  // Extra lift as volume scales past the floor.
   const scaleBoost = 1 + Math.log10(vol / RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME + 1);
   // 1/(0.05+cpc): $0.05 → ~10×, $0.25 → ~4×, $1 → ~1×
   const cheapBoost = 1 / (0.05 + cpc);

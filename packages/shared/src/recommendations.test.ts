@@ -35,16 +35,16 @@ describe("recommendations", () => {
   });
 
   it("low-CPC score prefers pennies over dollar clicks at equal volume", () => {
-    const pennies = seedLowCpcScore(200_000, 0.2, 0.08);
-    const dollar = seedLowCpcScore(200_000, 0.2, 0.95);
+    const pennies = seedLowCpcScore(20_000, 0.2, 0.08);
+    const dollar = seedLowCpcScore(20_000, 0.2, 0.95);
     expect(pennies).toBeGreaterThan(dollar);
   });
 
-  it("low-CPC score requires 100k volume and prefers higher volume", () => {
-    expect(RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME).toBe(100_000);
-    expect(seedLowCpcScore(50_000, 0.2, 0.1)).toBe(0);
-    const high = seedLowCpcScore(500_000, 0.2, 0.2);
-    const floor = seedLowCpcScore(100_000, 0.2, 0.2);
+  it("low-CPC score requires 5k volume and prefers higher volume", () => {
+    expect(RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME).toBe(5_000);
+    expect(seedLowCpcScore(1_000, 0.2, 0.1)).toBe(0);
+    const high = seedLowCpcScore(50_000, 0.2, 0.2);
+    const floor = seedLowCpcScore(5_000, 0.2, 0.2);
     expect(high).toBeGreaterThan(floor);
   });
 
@@ -55,7 +55,7 @@ describe("recommendations", () => {
           term: "cheap habit tracker free",
           category: "Productivity",
           probe: "habit tracker",
-          volume: 150_000,
+          volume: 12_000,
           competition: 0.2,
           cpc: 0.12,
         },
@@ -63,7 +63,7 @@ describe("recommendations", () => {
           term: "premium habit coaching app",
           category: "Productivity",
           probe: "habit tracker",
-          volume: 180_000,
+          volume: 18_000,
           competition: 0.2,
           cpc: 2.5,
         },
@@ -71,7 +71,7 @@ describe("recommendations", () => {
           term: "simple budget spreadsheet template",
           category: "Fintech",
           probe: "budget spreadsheet",
-          volume: 220_000,
+          volume: 22_000,
           competition: 0.25,
           cpc: 0.05,
         },
@@ -81,7 +81,9 @@ describe("recommendations", () => {
       { maxCpc: 1, preferLowCpc: true },
     );
     expect(picks.every((p) => (p.cpc ?? 99) <= 1)).toBe(true);
-    expect(picks.every((p) => (p.volume ?? 0) >= 100_000)).toBe(true);
+    expect(
+      picks.every((p) => (p.volume ?? 0) >= RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME),
+    ).toBe(true);
     expect(picks.map((p) => p.term)).not.toContain("premium habit coaching app");
     expect(picks.length).toBeGreaterThanOrEqual(2);
   });
@@ -117,7 +119,7 @@ describe("recommendations", () => {
       term,
       category: i % 2 === 0 ? "Tools" : "Edtech",
       probe: "study planner template",
-      volume: 120_000 + i * 5_000,
+      volume: 6_000 + i * 500,
       competition: 0.4,
       cpc: 0.05 + i * 0.02,
     }));
@@ -127,7 +129,9 @@ describe("recommendations", () => {
     });
     expect(picks.length).toBeGreaterThanOrEqual(10);
     expect(picks.every((p) => (p.cpc ?? 99) <= 1)).toBe(true);
-    expect(picks.every((p) => (p.volume ?? 0) >= 100_000)).toBe(true);
+    expect(
+      picks.every((p) => (p.volume ?? 0) >= RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME),
+    ).toBe(true);
   });
 
   it("buildRecommendations returns up to low-CPC limit for monetizable volume", () => {
@@ -167,7 +171,7 @@ describe("recommendations", () => {
       term: `${n} niche builder app`,
       category: `Cat${i % 8}`,
       probe: "habit tracker",
-      volume: 110_000 + i * 1_000,
+      volume: 6_000 + i * 200,
       competition: 0.3,
       cpc: 0.1 + (i % 5) * 0.05,
     }));
@@ -179,7 +183,11 @@ describe("recommendations", () => {
     });
     expect(low.keywords.length).toBeGreaterThan(8);
     expect(low.keywords.length).toBeLessThanOrEqual(RECOMMENDED_SEED_LOW_CPC_LIMIT);
-    expect(low.keywords.every((k) => (k.volume ?? 0) >= 100_000)).toBe(true);
+    expect(
+      low.keywords.every(
+        (k) => (k.volume ?? 0) >= RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME,
+      ),
+    ).toBe(true);
   });
 
   it("biases topic probes toward software and tools", () => {

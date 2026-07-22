@@ -428,7 +428,7 @@ export class DataForSeoService {
       }
     }
 
-    // Low-CPC @ 100k+: keep cheap clicks, prefer highest volume for monetization.
+    // Low-CPC: keep cheap clicks, prefer highest volume for monetization.
     // Default mode: volume-first.
     const shortlist = [...bestByTerm.values()]
       .filter((c) => (c.volume ?? 0) >= minVolume)

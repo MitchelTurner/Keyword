@@ -632,7 +632,7 @@ export class NichesService {
     try {
       opts.onProgress?.(
         mode === "low_cpc"
-          ? "Querying DataForSEO for cheap CPC niches (≥100k vol)…"
+          ? "Querying DataForSEO for cheap CPC niches (≥5k vol)…"
           : "Querying DataForSEO…",
       );
       apiCandidates = await this.dataForSeo.discoverRecommendedSeeds({
@@ -717,7 +717,7 @@ export class NichesService {
     );
 
     // Hard guarantee: low-CPC mode never returns keywords above the ceiling
-    // or below the 100k volume floor.
+    // or below the volume floor.
     if (maxCpc != null) {
       const volFloor = minVolume ?? RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME;
       keywords = keywords.filter(

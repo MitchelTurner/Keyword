@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME } from "@prospector/shared";
 import {
   api,
   money,
@@ -129,7 +130,7 @@ export default function NicheListPage() {
     setSearchingSeeds(true);
     setSearchProgress(
       mode === "low_cpc"
-        ? "Starting low-CPC search (≥100k vol, monetizable)…"
+        ? `Starting low-CPC search (≥${RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME.toLocaleString()}/mo, monetizable)…`
         : "Starting search…",
     );
     setError(null);
@@ -164,20 +165,21 @@ export default function NicheListPage() {
         if (job.status === "done") {
           const result =
             job.result ?? (await api.recommendations({ mode }));
-          // Belt-and-suspenders: low-CPC needs CPC ≤ $1 and volume ≥ 100k.
+          // Belt-and-suspenders: low-CPC needs CPC ≤ $1 and the volume floor.
           const keywords =
             mode === "low_cpc"
               ? (result.keywords ?? []).filter(
                   (k) =>
                     k.cpc != null &&
                     k.cpc <= 1 &&
-                    (k.volume ?? 0) >= 100_000,
+                    (k.volume ?? 0) >= RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME,
                 )
               : (result.keywords ?? []);
           setSeedMode(mode);
           setRecs({ ...result, mode, keywords, followOns: keywords });
           if (keywords.length === 0) {
             const d = result.diagnostics;
+            const volLabel = `${RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME.toLocaleString()}/mo`;
             if (result.aiReviewError) {
               setError(`AI review blocked results: ${result.aiReviewError}`);
             } else if (d && d.discovered > 0 && d.afterAi === 0) {
@@ -189,13 +191,13 @@ export default function NicheListPage() {
             } else if (d && d.discovered === 0) {
               setError(
                 mode === "low_cpc"
-                  ? "No keywords found with ≥100k/mo volume and CPC ≤ $1. Try again for a new probe mix."
+                  ? `No keywords found with ≥${volLabel} volume and CPC ≤ $1. Try again for a new probe mix.`
                   : "DataForSEO returned no candidates under the volume/competition filters. Try again.",
               );
             } else {
               setError(
                 mode === "low_cpc"
-                  ? "Search finished with no new monetizable seeds (≥100k/mo, CPC ≤ $1). Prior results are skipped so they won’t repeat — try again for a fresh mix."
+                  ? `Search finished with no new monetizable seeds (≥${volLabel}, CPC ≤ $1). Prior results are skipped so they won’t repeat — try again for a fresh mix.`
                   : "Search finished with no new buildable seeds. Prior recommendations are skipped so they won’t repeat — try again for a fresh mix.",
               );
             }

@@ -115,7 +115,7 @@ export default function RecommendationsPanel({
           onClick={() => void onSearchNew()}
           disabled={searching}
           className="rounded border border-emerald-800/70 bg-emerald-950/30 px-2.5 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-950/55 disabled:cursor-wait disabled:opacity-50"
-          title="Run a fresh DataForSEO search, then AI-review for buildable monetizable niches"
+          title="Run a fresh DataForSEO search, then AI-review for management platforms (no calculators/generators)"
         >
           {searching && !lowCpcMode ? "Searching…" : "Search new seeds"}
         </button>
@@ -141,7 +141,7 @@ export default function RecommendationsPanel({
         hint={
           lowCpcMode
             ? `Low CPC ≤ $${cpcCeiling.toFixed(2)} · volume ≥ ${num(minVolume)} · AI-reviewed for monetization`
-            : "High volume · low competition · AI-reviewed for buildable monetizable niches"
+            : "High volume · low competition · AI-reviewed management platforms"
         }
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -154,7 +154,7 @@ export default function RecommendationsPanel({
                 : emptyHint ||
                   (lowCpcMode
                     ? `No matches yet. Click Search low CPC (volume ≥ ${num(minVolume)}, CPC ≤ $${cpcCeiling.toFixed(2)}, clear monetization path).`
-                    : "No buildable niches yet. Click Search new seeds (volume ≥ 500, competition ≤ 50%, AI filters out professions like “doctor”).")}
+                    : "No management niches yet. Click Search new seeds (volume ≥ 500, competition ≤ 50%, platforms that make a workflow easier — no calculators/generators).")}
           </p>
           {searchButtons}
         </div>

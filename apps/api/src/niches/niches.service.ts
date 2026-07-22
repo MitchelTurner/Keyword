@@ -13,6 +13,7 @@ import {
   analyzeOpportunityTrend,
   buildRecommendations,
   estimateRunCost,
+  isCalculatorOrGeneratorSeed,
   searchSeedKeywords,
   type ApiSeedCandidate,
   type CreateNicheDto,
@@ -651,9 +652,11 @@ export class NichesService {
       apiCandidates = [];
     }
 
-    // Drop rejected, already-shown, and niche seeds before AI spend.
+    // Drop rejected, already-shown, niche seeds, and calc/generator gadgets.
     apiCandidates = apiCandidates.filter(
-      (c) => !excludedSet.has(c.term.trim().toLowerCase()),
+      (c) =>
+        !excludedSet.has(c.term.trim().toLowerCase()) &&
+        !isCalculatorOrGeneratorSeed(c.term),
     );
     // Hard volume floor for low-CPC before AI spend.
     if (mode === "low_cpc" && minVolume != null) {

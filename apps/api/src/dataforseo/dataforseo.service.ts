@@ -352,7 +352,7 @@ export class DataForSeoService {
       const j = Math.floor(Math.random() * (i + 1));
       [probes[i], probes[j]] = [probes[j]!, probes[i]!];
     }
-    // Low-CPC niches are rarer — probe more topics (incl. template/generator seeds).
+    // Low-CPC niches are rarer — probe more management-platform topics.
     const selectedProbes = lowCpc
       ? probes.slice(0, opts?.forceRefresh ? 28 : 32)
       : opts?.forceRefresh

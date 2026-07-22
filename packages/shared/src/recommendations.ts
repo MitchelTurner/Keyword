@@ -185,7 +185,7 @@ export const TOPIC_PROBES: Array<{
   { id: "pets", category: "Pets", seed: "pet sitting app" },
   { id: "fitness", category: "Fitness tech", seed: "workout tracker" },
   { id: "rentals", category: "Proptech", seed: "property management software" },
-  { id: "tools", category: "Tools", seed: "mortgage calculator" },
+  { id: "tasks", category: "Productivity", seed: "task management software" },
   { id: "affiliate", category: "Content", seed: "affiliate marketing tools" },
   { id: "forms", category: "SaaS", seed: "online form builder" },
   { id: "ai-writing", category: "AI tools", seed: "ai writing assistant" },
@@ -193,44 +193,44 @@ export const TOPIC_PROBES: Array<{
 ];
 
 /**
- * Extra probes for low-CPC discovery — biased toward mass-market topics that
- * can clear solid monthly volume and still monetize (tools, affiliate, freemium).
+ * Extra probes for low-CPC discovery — management platforms that make an
+ * ongoing workflow easier (not one-shot calculators/generators).
  */
 export const LOW_CPC_TOPIC_PROBES: Array<{
   id: string;
   category: string;
   seed: string;
 }> = [
-  { id: "resume-builder", category: "Career", seed: "resume builder" },
-  { id: "calorie-counter", category: "Health tech", seed: "calorie counter" },
-  { id: "mortgage-calc", category: "Fintech", seed: "mortgage calculator" },
-  { id: "bmi-calc", category: "Health tech", seed: "bmi calculator" },
-  { id: "password-gen", category: "Tools", seed: "password generator" },
-  { id: "qr-code", category: "Tools", seed: "qr code generator" },
-  { id: "logo-maker", category: "Design tools", seed: "logo maker" },
-  { id: "invoice-gen", category: "SaaS", seed: "invoice generator" },
-  { id: "name-generator", category: "Tools", seed: "business name generator" },
-  { id: "word-counter", category: "Tools", seed: "word counter" },
-  { id: "citation", category: "Edtech", seed: "citation generator" },
-  { id: "unit-convert", category: "Tools", seed: "unit converter" },
-  { id: "tip-calc", category: "Tools", seed: "tip calculator" },
-  { id: "age-calc", category: "Tools", seed: "age calculator" },
-  { id: "sleep-calc", category: "Health tech", seed: "sleep calculator" },
-  { id: "percent-calc", category: "Tools", seed: "percentage calculator" },
-  { id: "gpa-calc", category: "Edtech", seed: "gpa calculator" },
-  { id: "time-zone", category: "Tools", seed: "time zone converter" },
-  { id: "color-picker", category: "Design tools", seed: "color picker" },
-  { id: "wedding-budget", category: "Lifestyle", seed: "wedding budget calculator" },
-  { id: "savings-goal", category: "Fintech", seed: "savings calculator" },
-  { id: "habit-tracker", category: "Productivity", seed: "habit tracker app" },
-  { id: "workout-plan", category: "Fitness tech", seed: "workout planner" },
-  { id: "meal-planner", category: "Food tech", seed: "meal planner" },
-  { id: "flashcards", category: "Edtech", seed: "flashcard maker" },
-  { id: "quiz-maker", category: "Edtech", seed: "online quiz maker" },
-  { id: "affiliate-tools", category: "Content", seed: "affiliate marketing for beginners" },
-  { id: "blog-start", category: "Content", seed: "how to start a blog" },
-  { id: "youtube-grow", category: "Content", seed: "how to grow on youtube" },
-  { id: "side-hustle", category: "Career", seed: "side hustle ideas" },
+  { id: "team-tasks", category: "Productivity", seed: "team task management" },
+  { id: "client-portal", category: "SaaS", seed: "client portal software" },
+  { id: "project-mgmt", category: "Productivity", seed: "project management software" },
+  { id: "inventory-mgmt", category: "Ecommerce", seed: "inventory management app" },
+  { id: "volunteer-mgmt", category: "Nonprofit", seed: "volunteer management software" },
+  { id: "church-mgmt", category: "Nonprofit", seed: "church management software" },
+  { id: "fleet-mgmt", category: "Ops", seed: "fleet management software" },
+  { id: "classroom-mgmt", category: "Edtech", seed: "classroom management app" },
+  { id: "practice-mgmt", category: "Health tech", seed: "practice management software" },
+  { id: "membership-mgmt", category: "SaaS", seed: "membership management software" },
+  { id: "vendor-mgmt", category: "Ops", seed: "vendor management software" },
+  { id: "construction-mgmt", category: "Ops", seed: "construction project management" },
+  { id: "field-service", category: "Ops", seed: "field service management software" },
+  { id: "restaurant-mgmt", category: "Food tech", seed: "restaurant management software" },
+  { id: "salon-mgmt", category: "SaaS", seed: "salon management software" },
+  { id: "gym-mgmt", category: "Fitness tech", seed: "gym management software" },
+  { id: "daycare-mgmt", category: "Edtech", seed: "daycare management software" },
+  { id: "maintenance-mgmt", category: "Ops", seed: "maintenance management software" },
+  { id: "warehouse-mgmt", category: "Ecommerce", seed: "warehouse management software" },
+  { id: "rental-mgmt", category: "Proptech", seed: "rental management software" },
+  { id: "event-mgmt", category: "SaaS", seed: "event management software" },
+  { id: "staff-scheduling", category: "HR tech", seed: "staff scheduling software" },
+  { id: "patient-scheduling", category: "Health tech", seed: "patient scheduling software" },
+  { id: "tenant-portal", category: "Proptech", seed: "tenant portal software" },
+  { id: "work-order", category: "Ops", seed: "work order management software" },
+  { id: "crm-pipeline", category: "SaaS", seed: "sales pipeline management" },
+  { id: "content-calendar", category: "Marketing", seed: "content calendar software" },
+  { id: "franchise-mgmt", category: "Ops", seed: "franchise management software" },
+  { id: "clinic-mgmt", category: "Health tech", seed: "clinic management software" },
+  { id: "booking-mgmt", category: "SaaS", seed: "booking management software" },
 ];
 
 export type SerpPreviewItem = {
@@ -327,6 +327,30 @@ export function isSeedablePhrase(term: string): boolean {
   if (/https?:\/\//i.test(t)) return false;
   if (/^[0-9$]+$/.test(t)) return false;
   return true;
+}
+
+/**
+ * One-shot calculators/generators/converters — not ongoing management platforms.
+ * These are filtered out of recommended seeds.
+ */
+export function isCalculatorOrGeneratorSeed(term: string): boolean {
+  const t = normalizeTerm(term);
+  if (
+    /\b(calculator|calculators|generator|generators|converter|converters)\b/.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  // Common one-shot utility phrasing without those exact tokens.
+  if (
+    /\b(word counter|character counter|calorie counter|password generator|qr code|color picker|tip calc|bmi calc)\b/.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -462,6 +486,7 @@ export function diversifyApiSeedRecommendations(
 
   for (const c of candidates) {
     if (!isSeedablePhrase(c.term)) continue;
+    if (isCalculatorOrGeneratorSeed(c.term)) continue;
     const key = normalizeTerm(c.term);
     if (used.has(key)) continue;
     // Never recommend crowded head terms used as probes / curated starters.

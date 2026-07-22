@@ -68,59 +68,57 @@ Rules:
 - Do not include duplicates
 - No markdown, no prose outside the JSON`;
 
-const SEED_MONETIZE_SYSTEM = `You review seed keywords for a solo founder / indie hacker who wants to build a website or software product that can monetize relatively easily (SaaS, tools, directories, content sites with clear monetization, digital products, marketplaces, lead-gen sites they can operate).
+const SEED_MONETIZE_SYSTEM = `You review seed keywords for a solo founder / indie hacker who wants to build a management platform / SaaS that makes an ongoing task or workflow easier to run and can monetize (subscription SaaS preferred).
 
-Approve keywords where someone without a professional license could plausibly ship a digital product or content business around the demand.
+Approve keywords where someone could ship software that people use repeatedly to manage work, clients, inventory, schedules, operations, or a vertical process.
 
 REJECT examples (do not approve):
+- Calculators, generators, converters, counters, and other one-shot utility tools (mortgage calculator, QR code generator, password generator, tip calculator, etc.)
 - Licensed / in-person professions as the product itself: doctor, dentist, lawyer, attorney, CPA, therapist, plumber as a service YOU perform
-- Pure local "near me" fulfillment that requires being on-site (e.g. "emergency plumber near me")
+- Pure local "near me" fulfillment that requires being on-site
 - Job-seeking / hiring-only intent with no product angle
-- Brand-only terms with no productizable niche
+- Brand-only terms, pure content/how-to with no management product angle
 - Illegal, adult, or scammy topics
 
-APPROVE examples (be generous with these):
-- Software/tools/apps/platforms/calculators/builders
-- Vertical software ABOUT a profession (not being the profession): medical billing software, law firm CRM, dental practice scheduling
-- Directories, comparison sites, niche content + affiliate/ads, newsletters, templates, courses
-- Ecommerce tooling, inventory, booking, CRM, SEO, AI assistants, podcast hosting
+APPROVE examples:
+- Management platforms & ops software: inventory management, practice management, field service management, membership management, project/task management
+- Vertical software ABOUT a workflow (not being the profession): dental practice scheduling, law firm CRM, HOA management, salon booking management
+- Client portals, scheduling platforms, CRM/pipeline tools, work-order systems
 
 Respond ONLY with JSON:
 {"reviews":[{"keyword":string,"approve":boolean,"reason":string}]}
 
 Rules:
 - Include EVERY input keyword exactly once in reviews (match the keyword string)
-- Be strict: when unsure, reject
-- reason: short (under 200 chars)
+- Prefer management platforms over gadgets/utilities; when unsure, reject
+- reason: short (under 200 chars) — name the management job-to-be-done
 - No markdown, no prose outside the JSON`;
 
-const SEED_MONETIZE_LOW_CPC_SYSTEM = `You review solid-volume (≥5k/mo) low-CPC seed keywords for a solo founder who wants to make money with a website or software product.
+const SEED_MONETIZE_LOW_CPC_SYSTEM = `You review solid-volume (≥5k/mo) low-CPC seed keywords for a solo founder building a management platform / SaaS that makes an ongoing task easier.
 
-These keywords already cleared a cheap Ads CPC filter (≤ $1). Your job is monetization quality — not CPC.
+These keywords already cleared a cheap Ads CPC filter (≤ $1). Approve only management-oriented software niches with a clear SaaS/subscription path.
 
-APPROVE only when there is a clear path to revenue:
-- Freemium / SaaS tools & calculators people will use repeatedly
-- Affiliate or comparison content with known commercial products (finance, health, software, careers)
-- Lead-gen or directory plays with buyers on the other side
-- Digital products, templates, courses, newsletters with paid upside
-- Ad-supported tools/content where steady search volume makes display/native ads meaningful
+APPROVE only when the product is an ongoing management platform:
+- Practice / clinic / salon / gym / daycare management
+- Inventory, warehouse, vendor, fleet, maintenance, work-order management
+- Team/project/task management, staff scheduling, booking management
+- Client/tenant/member portals and CRM/pipeline tools for a vertical
 
-REJECT even if popular when money is unclear:
-- Pure curiosity / trivia / celebrity / meme searches with no product angle
-- One-off definition lookups with no tool or affiliate path
-- Licensed professions you would have to perform in person
-- Pure local "near me" services
+REJECT even if popular:
+- Calculators, generators, converters, counters, tip/BMI/age/GPA calculators, QR/password/name generators
+- One-shot makers/builders with no ongoing management workflow
+- Pure curiosity / trivia / how-to content with no ops product
+- Licensed professions you would perform in person, local "near me" services
 - Brand-only terms, jobs-only intent, illegal/adult/scam topics
-- Ultra-generic single-intent noise with no wedge
 
-In each approve reason, name the monetization model in a few words (e.g. "freemium calculator + ads", "affiliate comparison site").
+In each approve reason, name the management workflow + monetization (e.g. "salon ops SaaS subscription", "inventory management freemium").
 
 Respond ONLY with JSON:
 {"reviews":[{"keyword":string,"approve":boolean,"reason":string}]}
 
 Rules:
 - Include EVERY input keyword exactly once in reviews (match the keyword string)
-- Prefer fewer strong monetizable niches over many weak ones
+- Prefer fewer strong management niches over many weak utility terms
 - When unsure, reject
 - reason: short (under 200 chars)
 - No markdown, no prose outside the JSON`;
@@ -339,8 +337,8 @@ export class ClaudeService {
     const lowCpc = opts?.mode === "low_cpc";
     const system = lowCpc ? SEED_MONETIZE_LOW_CPC_SYSTEM : SEED_MONETIZE_SYSTEM;
     const user = lowCpc
-      ? `Review these high-volume low-CPC seed keywords for clear monetization paths (approve only if money is realistic):\n${JSON.stringify(unique)}`
-      : `Review these seed keywords for buildable + easily monetizable website/software niches:\n${JSON.stringify(unique)}`;
+      ? `Review these low-CPC seed keywords for management platforms that make an ongoing task easier (reject calculators/generators):\n${JSON.stringify(unique)}`
+      : `Review these seed keywords for buildable management platforms / SaaS (reject calculators/generators):\n${JSON.stringify(unique)}`;
 
     const tryParse = (raw: string) => {
       try {

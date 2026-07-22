@@ -7,6 +7,7 @@ import {
   TOPIC_PROBES,
   buildRecommendations,
   diversifyApiSeedRecommendations,
+  isCalculatorOrGeneratorSeed,
   isSeedablePhrase,
   phrasesTooSimilar,
   searchSeedKeywords,
@@ -88,37 +89,75 @@ describe("recommendations", () => {
     expect(picks.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("ships dedicated low-CPC topic probes", () => {
+  it("ships dedicated low-CPC management-platform probes", () => {
     expect(LOW_CPC_TOPIC_PROBES.length).toBeGreaterThanOrEqual(12);
     const seeds = LOW_CPC_TOPIC_PROBES.map((p) => p.seed.toLowerCase()).join(
       " ",
     );
-    expect(seeds).toMatch(/calculator|generator|builder|planner|tracker/);
+    expect(seeds).toMatch(/management|scheduling|portal|pipeline/);
+    expect(seeds).not.toMatch(/calculator|generator|converter/);
+  });
+
+  it("rejects calculator and generator seed phrases", () => {
+    expect(isCalculatorOrGeneratorSeed("mortgage calculator")).toBe(true);
+    expect(isCalculatorOrGeneratorSeed("qr code generator")).toBe(true);
+    expect(isCalculatorOrGeneratorSeed("unit converter online")).toBe(true);
+    expect(isCalculatorOrGeneratorSeed("salon management software")).toBe(
+      false,
+    );
+  });
+
+  it("drops calculators even when they pass volume/CPC filters", () => {
+    const picks = diversifyApiSeedRecommendations(
+      [
+        {
+          term: "free tip calculator app",
+          category: "Tools",
+          probe: "task management software",
+          volume: 20_000,
+          competition: 0.2,
+          cpc: 0.1,
+        },
+        {
+          term: "boutique salon management app",
+          category: "SaaS",
+          probe: "salon management software",
+          volume: 18_000,
+          competition: 0.25,
+          cpc: 0.4,
+        },
+      ],
+      [],
+      10,
+      { maxCpc: 1, preferLowCpc: true },
+    );
+    expect(picks.map((p) => p.term)).not.toContain("free tip calculator app");
+    expect(picks.map((p) => p.term)).toContain("boutique salon management app");
   });
 
   it("fills low-CPC results beyond one category when cheap terms exist", () => {
     const terms = [
-      "qr code generator online",
-      "citation maker for essays",
-      "garden bed layout planner",
-      "packing checklist printable",
-      "flashcard creator free",
-      "word count checker tool",
-      "color palette builder web",
-      "chore schedule printable kids",
-      "meal prep calendar weekly",
-      "resume outline template free",
-      "password strength checker",
-      "unit conversion calculator",
-      "countdown clock embed",
-      "reading log tracker kids",
-      "logo icon maker simple",
-      "invoice layout template free",
+      "salon management software",
+      "gym member management app",
+      "daycare attendance software",
+      "fleet maintenance software",
+      "volunteer scheduling platform",
+      "church member management app",
+      "clinic appointment management",
+      "warehouse inventory software",
+      "rental tenant management app",
+      "field service dispatch software",
+      "staff shift management app",
+      "vendor purchase management",
+      "event registration management",
+      "franchise ops management app",
+      "work order tracking software",
+      "client portal management tool",
     ];
     const many = terms.map((term, i) => ({
       term,
-      category: i % 2 === 0 ? "Tools" : "Edtech",
-      probe: "study planner template",
+      category: i % 2 === 0 ? "Ops" : "SaaS",
+      probe: "project management software",
       volume: 6_000 + i * 500,
       competition: 0.4,
       cpc: 0.05 + i * 0.02,
@@ -132,6 +171,7 @@ describe("recommendations", () => {
     expect(
       picks.every((p) => (p.volume ?? 0) >= RECOMMENDED_SEED_LOW_CPC_MIN_VOLUME),
     ).toBe(true);
+    expect(picks.every((p) => !isCalculatorOrGeneratorSeed(p.term))).toBe(true);
   });
 
   it("buildRecommendations returns up to low-CPC limit for monetizable volume", () => {
@@ -190,9 +230,10 @@ describe("recommendations", () => {
     ).toBe(true);
   });
 
-  it("biases topic probes toward software and tools", () => {
+  it("biases topic probes toward management software platforms", () => {
     const seeds = TOPIC_PROBES.map((p) => p.seed.toLowerCase()).join(" ");
-    expect(seeds).toMatch(/software|app|tool|calculator|platform|crm|seo/);
+    expect(seeds).toMatch(/software|app|tool|management|platform|crm|seo/);
+    expect(seeds).not.toMatch(/calculator|generator/);
     expect(seeds).not.toMatch(/\blawyer\b|\bplumber\b|\bdentist\b|\bdoctor\b/);
   });
 

@@ -176,6 +176,11 @@ export default function RecommendationsPanel({
             : `${apiSeeds.length} AI-reviewed niches · volume ≥ 500 · competition ≤ ${Math.round(RECOMMENDED_SEED_MAX_COMPETITION * 100)}%`
       }
     >
+      {lowCpcMode && (
+        <p className="mb-2 rounded border border-sky-900/50 bg-sky-950/30 px-2.5 py-1.5 text-xs text-sky-300">
+          Low-CPC mode — only showing Ads CPC ≤ ${cpcCeiling.toFixed(2)}
+        </p>
+      )}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] uppercase tracking-wide text-zinc-500">
           {lowCpcMode ? "Cheap-click niches" : "Suggested niches"}

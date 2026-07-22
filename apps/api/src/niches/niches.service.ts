@@ -425,22 +425,23 @@ export class NichesService {
   async recommendations(
     opts: { forceRefresh?: boolean; mode?: SeedSearchMode } = {},
   ) {
-    const mode = opts.mode ?? "default";
     // Legacy ?refresh=true still works but prefers the async job path.
     if (opts.forceRefresh) {
-      return this.startRecommendationsRefresh({ mode });
+      return this.startRecommendationsRefresh({
+        mode: opts.mode ?? "default",
+      });
     }
 
     const seedJob = await this.seedJobs.get();
+    const mode = opts.mode;
 
     if (seedJob.status === "running") {
       const prior =
-        seedJob.mode === mode
+        mode == null || seedJob.mode === mode
           ? (seedJob.result as RecommendationsPayload | undefined)
           : undefined;
       return {
         niches: prior?.niches ?? [],
-        // Never show a different mode's keywords while a search is running.
         keywords: prior?.keywords ?? [],
         followOns: prior?.followOns ?? [],
         aiReviewError: prior?.aiReviewError,
@@ -452,10 +453,13 @@ export class NichesService {
       };
     }
 
+    // No mode (or matching mode): return the latest completed job as-is.
+    // Critical: niche-list polls must not rebuild default high-CPC results
+    // over a completed low-CPC search.
     if (
       seedJob.status === "done" &&
       seedJob.result &&
-      seedJob.mode === mode
+      (mode == null || seedJob.mode === mode)
     ) {
       return {
         ...(seedJob.result as RecommendationsPayload),
@@ -467,7 +471,7 @@ export class NichesService {
     return this.buildRecommendationsPayload({
       forceRefresh: false,
       attachSerp: false,
-      mode,
+      mode: mode ?? "default",
     });
   }
 

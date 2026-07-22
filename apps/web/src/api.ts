@@ -259,8 +259,8 @@ export const api = {
       niches: NicheListItem[];
     }>("/niches"),
   recommendations: (opts?: { refresh?: boolean; mode?: SeedSearchMode }) => {
-    const mode = opts?.mode ?? "default";
     if (opts?.refresh) {
+      const mode = opts.mode ?? "default";
       return request<RecommendationsResponse>(
         `/recommendations/refresh?mode=${encodeURIComponent(mode)}`,
         {
@@ -269,7 +269,10 @@ export const api = {
         },
       );
     }
-    const qs = mode === "default" ? "" : `?mode=${encodeURIComponent(mode)}`;
+    // Omit mode to fetch the latest completed job (whatever mode it was).
+    // Passing mode=default was overwriting low-CPC results on niche refresh polls.
+    const qs =
+      opts?.mode != null ? `?mode=${encodeURIComponent(opts.mode)}` : "";
     return request<RecommendationsResponse>(`/recommendations${qs}`);
   },
   recommendationsJob: () =>

@@ -30,6 +30,8 @@ export default function NicheListPage() {
   const [globalCost, setGlobalCost] = useState(0);
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   const [recs, setRecs] = useState<RecommendationsResponse | null>(null);
+  /** Authoritative UI mode — survives niche refresh polls overwriting API payloads. */
+  const [seedMode, setSeedMode] = useState<SeedSearchMode>("default");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [searchingSeeds, setSearchingSeeds] = useState(false);
@@ -55,14 +57,20 @@ export default function NicheListPage() {
     [niches],
   );
 
-  async function refresh() {
+  async function refresh(opts?: { reloadRecs?: boolean }) {
     const list = await api.listNiches();
     setNiches(list.niches);
     setGlobalCost(list.globalCost);
     setEstimate(list.costEstimate);
-    // Recommendations are optional — never block the niche table on this call.
+    // Never clobber an in-flight seed search. When reloading recs, fetch the
+    // latest job (no mode) so a completed low-CPC run is not replaced by default.
+    if (opts?.reloadRecs === false || searchingSeeds) return;
     try {
-      setRecs(await api.recommendations());
+      const next = await api.recommendations();
+      setRecs(next);
+      if (next.mode === "low_cpc" || next.mode === "default") {
+        setSeedMode(next.mode);
+      }
     } catch {
       /* keep prior recs */
     }
@@ -77,10 +85,11 @@ export default function NicheListPage() {
   useEffect(() => {
     if (!anyInFlight) return;
     const id = window.setInterval(() => {
-      refresh().catch(() => undefined);
+      // Niche status only — do not reload recommendations (was wiping low-CPC).
+      refresh({ reloadRecs: false }).catch(() => undefined);
     }, 3000);
     return () => window.clearInterval(id);
-  }, [anyInFlight]);
+  }, [anyInFlight, searchingSeeds]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -116,6 +125,7 @@ export default function NicheListPage() {
   }
 
   async function runSeedSearch(mode: SeedSearchMode) {
+    setSeedMode(mode);
     setSearchingSeeds(true);
     setSearchProgress(
       mode === "low_cpc" ? "Starting low-CPC search…" : "Starting search…",
@@ -159,6 +169,7 @@ export default function NicheListPage() {
                   (k) => k.cpc != null && k.cpc <= 1,
                 )
               : (result.keywords ?? []);
+          setSeedMode(mode);
           setRecs({ ...result, mode, keywords, followOns: keywords });
           if (keywords.length === 0) {
             const d = result.diagnostics;
@@ -288,8 +299,8 @@ export default function NicheListPage() {
         searching={searchingSeeds}
         progress={searchProgress}
         aiReviewError={recs?.aiReviewError}
-        mode={recs?.mode ?? "default"}
-        maxCpc={recs?.maxCpc}
+        mode={seedMode}
+        maxCpc={seedMode === "low_cpc" ? 1 : (recs?.maxCpc ?? null)}
         emptyHint={
           recs?.diagnostics && recs.diagnostics.discovered > 0
             ? `Last search: ${recs.diagnostics.discovered} candidates → ${recs.diagnostics.afterAi} AI-approved → ${recs.diagnostics.recommended} shown.`

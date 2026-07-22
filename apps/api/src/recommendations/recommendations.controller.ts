@@ -19,7 +19,8 @@ import {
   type SeedSearchMode,
 } from "../niches/niches.service";
 
-function parseMode(raw?: string): SeedSearchMode {
+function parseMode(raw?: string): SeedSearchMode | undefined {
+  if (raw == null || raw === "") return undefined;
   return raw === "low_cpc" ? "low_cpc" : "default";
 }
 
@@ -33,9 +34,11 @@ export class RecommendationsController {
     @Query("mode") mode?: string,
   ) {
     const forceRefresh = refresh === "1" || refresh === "true";
+    const parsed = parseMode(mode);
     return this.niches.recommendations({
       forceRefresh,
-      mode: parseMode(mode),
+      // Undefined mode → return latest job result (do not force default rebuild).
+      mode: forceRefresh ? (parsed ?? "default") : parsed,
     });
   }
 
@@ -46,7 +49,7 @@ export class RecommendationsController {
     @Body() body?: { mode?: string },
   ) {
     return this.niches.startRecommendationsRefresh({
-      mode: parseMode(mode ?? body?.mode),
+      mode: parseMode(mode ?? body?.mode) ?? "default",
     });
   }
 

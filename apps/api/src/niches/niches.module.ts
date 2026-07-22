@@ -6,6 +6,7 @@ import { PortfolioController } from "../portfolio/portfolio.controller";
 import { RecommendationsController } from "../recommendations/recommendations.controller";
 import { NichesController } from "./niches.controller";
 import { NichesService } from "./niches.service";
+import { SeedSearchJobStore } from "./seed-search-job.store";
 
 @Module({
   imports: [PipelineModule, DataForSeoModule, ClaudeModule],
@@ -14,7 +15,7 @@ import { NichesService } from "./niches.service";
     PortfolioController,
     RecommendationsController,
   ],
-  providers: [NichesService],
+  providers: [NichesService, SeedSearchJobStore],
   exports: [NichesService],
 })
 export class NichesModule {}

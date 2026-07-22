@@ -320,9 +320,12 @@ export class DataForSeoService {
       const j = Math.floor(Math.random() * (i + 1));
       [probes[i], probes[j]] = [probes[j]!, probes[i]!];
     }
-    const selectedProbes = opts?.forceRefresh
-      ? probes.slice(0, 12)
-      : probes.slice(0, 16);
+    // Low-CPC niches are rarer — probe more topics when filtering by maxCpc.
+    const selectedProbes = opts?.maxCpc != null
+      ? probes.slice(0, opts?.forceRefresh ? 16 : 18)
+      : opts?.forceRefresh
+        ? probes.slice(0, 12)
+        : probes.slice(0, 16);
 
     // Parallel probe calls (bounded) — much faster than serial batches.
     const concurrency = 6;
@@ -375,7 +378,7 @@ export class DataForSeoService {
     }
     const shortlist = [...bestByTerm.values()]
       .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
-      .slice(0, opts?.forceRefresh ? 50 : 80);
+      .slice(0, opts?.maxCpc != null ? 100 : opts?.forceRefresh ? 50 : 80);
 
     const refined = await this.refineSeedCompetition(shortlist, maxCompetition);
 

@@ -21,8 +21,6 @@ import {
   type UpdateNicheAssumptionsDto,
   type UpdateOpportunityDto,
 } from "@prospector/shared";
-
-export type SeedSearchMode = "default" | "low_cpc";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
@@ -35,6 +33,13 @@ import {
   attachDecisionSupport,
   parseRubricConfig,
 } from "./decision";
+import {
+  SeedSearchJobStore,
+  type SeedSearchJobRecord,
+  type SeedSearchMode,
+} from "./seed-search-job.store";
+
+export type { SeedSearchMode };
 
 export type RecommendationsPayload = ReturnType<typeof buildRecommendations> & {
   aiReviewError?: string;
@@ -49,16 +54,6 @@ export type RecommendationsPayload = ReturnType<typeof buildRecommendations> & {
     afterAi: number;
     recommended: number;
   };
-};
-
-type SeedSearchJob = {
-  id: string;
-  status: "idle" | "running" | "done" | "error";
-  progress: string;
-  mode: SeedSearchMode;
-  error?: string;
-  result?: RecommendationsPayload;
-  updatedAt: number;
 };
 
 function csvEscape(value: string | number | null | undefined): string {
@@ -91,20 +86,13 @@ export class NichesService {
     reasons: Map<string, string>;
   } | null = null;
 
-  private seedJob: SeedSearchJob = {
-    id: "",
-    status: "idle",
-    progress: "",
-    mode: "default",
-    updatedAt: Date.now(),
-  };
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly pipeline: PipelineService,
     private readonly cost: CostService,
     private readonly dataForSeo: DataForSeoService,
     private readonly claude: ClaudeService,
+    private readonly seedJobs: SeedSearchJobStore,
   ) {}
 
   estimateCost() {
@@ -443,30 +431,36 @@ export class NichesService {
       return this.startRecommendationsRefresh({ mode });
     }
 
-    if (this.seedJob.status === "running") {
+    const seedJob = await this.seedJobs.get();
+
+    if (seedJob.status === "running") {
+      const prior =
+        seedJob.mode === mode
+          ? (seedJob.result as RecommendationsPayload | undefined)
+          : undefined;
       return {
-        niches: this.seedJob.result?.niches ?? [],
-        keywords: this.seedJob.result?.keywords ?? [],
-        followOns: this.seedJob.result?.followOns ?? [],
-        aiReviewError: this.seedJob.result?.aiReviewError,
+        niches: prior?.niches ?? [],
+        // Never show a different mode's keywords while a search is running.
+        keywords: prior?.keywords ?? [],
+        followOns: prior?.followOns ?? [],
+        aiReviewError: prior?.aiReviewError,
         searching: true,
-        jobId: this.seedJob.id,
-        progress: this.seedJob.progress,
-        mode: this.seedJob.mode,
-        maxCpc:
-          this.seedJob.mode === "low_cpc" ? RECOMMENDED_SEED_MAX_CPC : null,
+        jobId: seedJob.id,
+        progress: seedJob.progress,
+        mode: seedJob.mode,
+        maxCpc: seedJob.mode === "low_cpc" ? RECOMMENDED_SEED_MAX_CPC : null,
       };
     }
 
     if (
-      this.seedJob.status === "done" &&
-      this.seedJob.result &&
-      this.seedJob.mode === mode
+      seedJob.status === "done" &&
+      seedJob.result &&
+      seedJob.mode === mode
     ) {
       return {
-        ...this.seedJob.result,
+        ...(seedJob.result as RecommendationsPayload),
         searching: false,
-        jobId: this.seedJob.id,
+        jobId: seedJob.id,
       };
     }
 
@@ -478,24 +472,24 @@ export class NichesService {
   }
 
   /** Start a background seed search (POST /recommendations/refresh). */
-  startRecommendationsRefresh(opts: { mode?: SeedSearchMode } = {}) {
+  async startRecommendationsRefresh(opts: { mode?: SeedSearchMode } = {}) {
     const mode = opts.mode ?? "default";
-    if (this.seedJob.status === "running") {
+    const current = await this.seedJobs.get();
+    if (current.status === "running") {
       return {
-        niches: this.seedJob.result?.niches ?? [],
-        keywords: this.seedJob.result?.keywords ?? [],
-        followOns: this.seedJob.result?.followOns ?? [],
+        niches: [] as RecommendationsPayload["niches"],
+        keywords: [] as RecommendationKeyword[],
+        followOns: [] as RecommendationKeyword[],
         searching: true,
-        jobId: this.seedJob.id,
-        progress: this.seedJob.progress,
-        mode: this.seedJob.mode,
-        maxCpc:
-          this.seedJob.mode === "low_cpc" ? RECOMMENDED_SEED_MAX_CPC : null,
+        jobId: current.id,
+        progress: current.progress,
+        mode: current.mode,
+        maxCpc: current.mode === "low_cpc" ? RECOMMENDED_SEED_MAX_CPC : null,
       };
     }
 
     const id = randomUUID();
-    this.seedJob = {
+    const running: SeedSearchJobRecord = {
       id,
       status: "running",
       progress:
@@ -503,34 +497,39 @@ export class NichesService {
           ? "Discovering low-CPC keywords…"
           : "Discovering keywords…",
       mode,
-      result: this.seedJob.result,
+      // Do not carry prior-mode keywords — avoids flashing $50 CPC on a low-CPC run.
+      result: undefined,
       updatedAt: Date.now(),
     };
+    await this.seedJobs.set(running);
 
     void this.runRecommendationsRefresh(id, mode);
 
     return {
-      niches: this.seedJob.result?.niches ?? [],
-      keywords: this.seedJob.result?.keywords ?? [],
-      followOns: this.seedJob.result?.followOns ?? [],
+      niches: [] as RecommendationsPayload["niches"],
+      keywords: [] as RecommendationKeyword[],
+      followOns: [] as RecommendationKeyword[],
       searching: true,
       jobId: id,
-      progress: this.seedJob.progress,
+      progress: running.progress,
       mode,
       maxCpc: mode === "low_cpc" ? RECOMMENDED_SEED_MAX_CPC : null,
     };
   }
 
-  getRecommendationsJob() {
+  async getRecommendationsJob() {
+    const seedJob = await this.seedJobs.get();
     return {
-      jobId: this.seedJob.id || null,
-      status: this.seedJob.status,
-      progress: this.seedJob.progress,
-      mode: this.seedJob.mode,
-      error: this.seedJob.error ?? null,
-      updatedAt: this.seedJob.updatedAt,
+      jobId: seedJob.id || null,
+      status: seedJob.status,
+      progress: seedJob.progress,
+      mode: seedJob.mode,
+      error: seedJob.error ?? null,
+      updatedAt: seedJob.updatedAt,
       result:
-        this.seedJob.status === "done" ? (this.seedJob.result ?? null) : null,
+        seedJob.status === "done"
+          ? ((seedJob.result as RecommendationsPayload | undefined) ?? null)
+          : null,
     };
   }
 
@@ -539,7 +538,7 @@ export class NichesService {
     mode: SeedSearchMode,
   ) {
     try {
-      this.patchSeedJob(jobId, {
+      await this.seedJobs.patch(jobId, {
         progress:
           mode === "low_cpc"
             ? "Discovering low-CPC keywords…"
@@ -549,35 +548,34 @@ export class NichesService {
         forceRefresh: true,
         attachSerp: true,
         mode,
-        onProgress: (progress) => this.patchSeedJob(jobId, { progress }),
+        onProgress: (progress) => {
+          void this.seedJobs.patch(jobId, { progress });
+        },
       });
-      if (this.seedJob.id !== jobId) return;
-      this.seedJob = {
+      const current = await this.seedJobs.get();
+      if (current.id !== jobId) return;
+      await this.seedJobs.set({
         id: jobId,
         status: "done",
         progress: "Done",
         mode,
         result,
         updatedAt: Date.now(),
-      };
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Async seed refresh failed: ${message}`);
-      if (this.seedJob.id !== jobId) return;
-      this.seedJob = {
+      const current = await this.seedJobs.get();
+      if (current.id !== jobId) return;
+      await this.seedJobs.set({
         id: jobId,
         status: "error",
         progress: "Failed",
         mode,
         error: message,
         updatedAt: Date.now(),
-      };
+      });
     }
-  }
-
-  private patchSeedJob(jobId: string, patch: Partial<SeedSearchJob>) {
-    if (this.seedJob.id !== jobId || this.seedJob.status !== "running") return;
-    this.seedJob = { ...this.seedJob, ...patch, updatedAt: Date.now() };
   }
 
   private async buildRecommendationsPayload(opts: {
@@ -676,8 +674,11 @@ export class NichesService {
       (k) => !rejectedSet.has(k.term.trim().toLowerCase()),
     );
 
-    // In low-CPC mode, surface the cheapest clicks first across categories.
-    if (mode === "low_cpc") {
+    // Hard guarantee: low-CPC mode never returns keywords above the ceiling.
+    if (maxCpc != null) {
+      keywords = keywords.filter(
+        (k) => k.cpc != null && !Number.isNaN(k.cpc) && k.cpc <= maxCpc,
+      );
       keywords = [...keywords].sort((a, b) => {
         const cpcA = a.cpc ?? Number.POSITIVE_INFINITY;
         const cpcB = b.cpc ?? Number.POSITIVE_INFINITY;
@@ -689,8 +690,15 @@ export class NichesService {
     if (opts.attachSerp && keywords.length > 0) {
       opts.onProgress?.("Checking SERP for top picks…");
       keywords = await this.attachSerpPreviews(keywords, 5);
+      // SERP attach must not reintroduce high-CPC rows.
+      if (maxCpc != null) {
+        keywords = keywords.filter(
+          (k) => k.cpc != null && !Number.isNaN(k.cpc) && k.cpc <= maxCpc,
+        );
+      }
     }
 
+    const job = await this.seedJobs.get();
     const diagnostics = {
       discovered,
       afterRejectList,
@@ -703,6 +711,10 @@ export class NichesService {
         event: "seed_recommendations",
         mode,
         maxCpc: maxCpc ?? null,
+        maxCpcInResult:
+          keywords.length > 0
+            ? Math.max(...keywords.map((k) => k.cpc ?? 0))
+            : null,
         ...diagnostics,
       }),
     );
@@ -713,7 +725,7 @@ export class NichesService {
       followOns: keywords,
       aiReviewError,
       searching: false,
-      jobId: this.seedJob.id || null,
+      jobId: job.id || null,
       mode,
       maxCpc: maxCpc ?? null,
       diagnostics,
@@ -812,15 +824,17 @@ export class NichesService {
     });
 
     // Drop from latest job result immediately.
-    if (this.seedJob.result) {
-      const keywords = this.seedJob.result.keywords.filter(
+    const job = await this.seedJobs.get();
+    if (job.result) {
+      const prior = job.result as RecommendationsPayload;
+      const keywords = prior.keywords.filter(
         (k) => k.term.trim().toLowerCase() !== key,
       );
-      this.seedJob.result = {
-        ...this.seedJob.result,
-        keywords,
-        followOns: keywords,
-      };
+      await this.seedJobs.set({
+        ...job,
+        result: { ...prior, keywords, followOns: keywords },
+        updatedAt: Date.now(),
+      });
     }
 
     return { ok: true as const, term: key };

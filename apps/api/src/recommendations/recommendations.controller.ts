@@ -41,7 +41,10 @@ export class RecommendationsController {
 
   /** Kick off an async seed search used by the search buttons. */
   @Post("refresh")
-  refresh(@Query("mode") mode?: string, @Body() body?: { mode?: string }) {
+  async refresh(
+    @Query("mode") mode?: string,
+    @Body() body?: { mode?: string },
+  ) {
     return this.niches.startRecommendationsRefresh({
       mode: parseMode(mode ?? body?.mode),
     });
@@ -49,7 +52,7 @@ export class RecommendationsController {
 
   /** Poll status / result for the latest seed search job. */
   @Get("job")
-  job() {
+  async job() {
     return this.niches.getRecommendationsJob();
   }
 

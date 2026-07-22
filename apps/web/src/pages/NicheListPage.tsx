@@ -121,21 +121,46 @@ export default function NicheListPage() {
       mode === "low_cpc" ? "Starting low-CPC search…" : "Starting search…",
     );
     setError(null);
+    // Clear prior results immediately so a default search can't flash high CPCs.
+    setRecs({
+      niches: [],
+      keywords: [],
+      followOns: [],
+      searching: true,
+      mode,
+      maxCpc: mode === "low_cpc" ? 1 : null,
+    });
     try {
       const started = await api.recommendations({ refresh: true, mode });
-      setRecs(started);
+      const jobId = started.jobId;
+      if (!jobId) {
+        throw new Error("Seed search did not return a job id");
+      }
+      setRecs({ ...started, mode, keywords: [], followOns: [] });
       setSearchProgress(started.progress || "Searching…");
 
-      // Poll async job until done/error (avoids proxy timeouts on long DFS runs).
+      // Poll ONLY this job id — never accept a stale "done" from another instance/mode.
       for (let i = 0; i < 90; i++) {
         await new Promise((r) => window.setTimeout(r, 2000));
         const job = await api.recommendationsJob();
+        if (job.jobId !== jobId) {
+          // Different instance/stale job — keep waiting for our id to appear.
+          setSearchProgress(started.progress || "Searching…");
+          continue;
+        }
         setSearchProgress(job.progress || undefined);
         if (job.status === "done") {
           const result =
             job.result ?? (await api.recommendations({ mode }));
-          setRecs(result);
-          if ((result.keywords?.length ?? 0) === 0) {
+          // Belt-and-suspenders: drop anything over $1 in low-CPC mode.
+          const keywords =
+            mode === "low_cpc"
+              ? (result.keywords ?? []).filter(
+                  (k) => k.cpc != null && k.cpc <= 1,
+                )
+              : (result.keywords ?? []);
+          setRecs({ ...result, mode, keywords, followOns: keywords });
+          if (keywords.length === 0) {
             const d = result.diagnostics;
             if (result.aiReviewError) {
               setError(`AI review blocked results: ${result.aiReviewError}`);
@@ -146,13 +171,13 @@ export default function NicheListPage() {
             } else if (d && d.discovered === 0) {
               setError(
                 mode === "low_cpc"
-                  ? "No keywords found with CPC ≤ $1 under the volume/competition filters. Try Search new seeds first, then Search low CPC."
+                  ? "No keywords found with CPC ≤ $1 under the volume/competition filters. Try again for a new probe mix."
                   : "DataForSEO returned no candidates under the volume/competition filters. Try again.",
               );
             } else {
               setError(
                 mode === "low_cpc"
-                  ? "Search finished but found no low-CPC buildable seeds. Try again."
+                  ? "Search finished but found no seeds with CPC ≤ $1. Try again."
                   : "Search finished but found no buildable seeds. Try again.",
               );
             }

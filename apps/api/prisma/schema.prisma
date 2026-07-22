@@ -95,6 +95,17 @@ model RejectedSeed {
   @@index([createdAt])
 }
 
+/// Seeds already surfaced in Recommended seeds — never suggest again.
+model ShownRecommendedSeed {
+  id        String   @id @default(cuid())
+  term      String   @unique
+  /// default | low_cpc | mixed — last mode that showed this term
+  mode      String   @default("default")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model ApiCostLog {
   id        String   @id @default(cuid())
   provider  String

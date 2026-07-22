@@ -195,8 +195,8 @@ export default function NicheListPage() {
             } else {
               setError(
                 mode === "low_cpc"
-                  ? "Search finished but found no monetizable seeds with ≥100k/mo and CPC ≤ $1. Try again."
-                  : "Search finished but found no buildable seeds. Try again.",
+                  ? "Search finished with no new monetizable seeds (≥100k/mo, CPC ≤ $1). Prior results are skipped so they won’t repeat — try again for a fresh mix."
+                  : "Search finished with no new buildable seeds. Prior recommendations are skipped so they won’t repeat — try again for a fresh mix.",
               );
             }
           }

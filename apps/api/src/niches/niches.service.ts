@@ -464,8 +464,14 @@ export class NichesService {
       seedJob.result &&
       (mode == null || seedJob.mode === mode)
     ) {
+      const payload = seedJob.result as RecommendationsPayload;
+      // Remember currently displayed seeds so the next search won't repeat them.
+      void this.markSeedsShown(
+        payload.keywords?.map((k) => k.term) ?? [],
+        seedJob.mode,
+      );
       return {
-        ...(seedJob.result as RecommendationsPayload),
+        ...payload,
         searching: false,
         jobId: seedJob.id,
       };
@@ -606,8 +612,15 @@ export class NichesService {
     const rejected = await this.prisma.rejectedSeed.findMany({
       select: { term: true },
     });
-    const rejectedSet = new Set(
-      rejected.map((r) => r.term.trim().toLowerCase()),
+    const shown = await this.prisma.shownRecommendedSeed.findMany({
+      select: { term: true },
+    });
+    const excludedSet = new Set(
+      [
+        ...rejected.map((r) => r.term),
+        ...shown.map((s) => s.term),
+        ...existingSeeds,
+      ].map((t) => t.trim().toLowerCase()),
     );
 
     let apiCandidates: ApiSeedCandidate[] = [];
@@ -638,8 +651,9 @@ export class NichesService {
       apiCandidates = [];
     }
 
+    // Drop rejected, already-shown, and niche seeds before AI spend.
     apiCandidates = apiCandidates.filter(
-      (c) => !rejectedSet.has(c.term.trim().toLowerCase()),
+      (c) => !excludedSet.has(c.term.trim().toLowerCase()),
     );
     // Hard volume floor for low-CPC before AI spend.
     if (mode === "low_cpc" && minVolume != null) {
@@ -678,7 +692,7 @@ export class NichesService {
     }
 
     apiCandidates = apiCandidates.filter(
-      (c) => !rejectedSet.has(c.term.trim().toLowerCase()),
+      (c) => !excludedSet.has(c.term.trim().toLowerCase()),
     );
 
     opts.onProgress?.(
@@ -686,8 +700,9 @@ export class NichesService {
         ? "Ranking cheapest CPC seeds…"
         : "Ranking recommendations…",
     );
+    // Pass every excluded term as "existing" so diversify won't re-pick them.
     const built = buildRecommendations({
-      existingSeeds,
+      existingSeeds: [...excludedSet],
       apiCandidates,
       shuffle: opts.forceRefresh,
       maxCpc,
@@ -698,7 +713,7 @@ export class NichesService {
     });
 
     let keywords = built.keywords.filter(
-      (k) => !rejectedSet.has(k.term.trim().toLowerCase()),
+      (k) => !excludedSet.has(k.term.trim().toLowerCase()),
     );
 
     // Hard guarantee: low-CPC mode never returns keywords above the ceiling
@@ -748,11 +763,18 @@ export class NichesService {
       recommended: keywords.length,
     };
 
+    // Persist what we surface so the next Search won't repeat these terms.
+    await this.markSeedsShown(
+      keywords.map((k) => k.term),
+      mode,
+    );
+
     this.logger.log(
       JSON.stringify({
         event: "seed_recommendations",
         mode,
         maxCpc: maxCpc ?? null,
+        excludedPrior: excludedSet.size,
         maxCpcInResult:
           keywords.length > 0
             ? Math.max(...keywords.map((k) => k.cpc ?? 0))
@@ -772,6 +794,41 @@ export class NichesService {
       maxCpc: maxCpc ?? null,
       diagnostics,
     };
+  }
+
+  /** Record terms that were shown as recommended seeds (idempotent). */
+  private async markSeedsShown(
+    terms: string[],
+    mode: SeedSearchMode | string = "default",
+  ): Promise<number> {
+    const unique = [
+      ...new Set(
+        terms
+          .map((t) => t.trim().replace(/\s+/g, " ").toLowerCase())
+          .filter((t) => t.length > 0 && t.length <= 120),
+      ),
+    ];
+    if (unique.length === 0) return 0;
+
+    let written = 0;
+    // Upsert one-by-one — volume is small (≤ ~36 per search) and unique on term.
+    for (const term of unique) {
+      try {
+        await this.prisma.shownRecommendedSeed.upsert({
+          where: { term },
+          create: { term, mode: String(mode) },
+          update: { mode: String(mode) },
+        });
+        written += 1;
+      } catch (err) {
+        this.logger.warn(
+          `markSeedsShown failed for ${term}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+    return written;
   }
 
   private async attachSerpPreviews(

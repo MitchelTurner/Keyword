@@ -67,11 +67,13 @@ describe("DataForSEO response parsing", () => {
 });
 
 describe("normalizeCompetition", () => {
-  it("prefers competition_index over LOW/MEDIUM/HIGH labels", () => {
-    expect(normalizeCompetition("HIGH")).toBe(1);
-    expect(normalizeCompetition("medium")).toBeCloseTo(0.66);
+  it("prefers competition_index; labels/buckets alone are not measurements", () => {
+    expect(normalizeCompetition("HIGH")).toBeNull();
+    expect(normalizeCompetition("medium")).toBeNull();
     expect(normalizeCompetition(null, 45)).toBeCloseTo(0.45);
     expect(normalizeCompetition("LOW", 12)).toBeCloseTo(0.12);
     expect(normalizeCompetition(0.72)).toBeCloseTo(0.72);
+    expect(normalizeCompetition(0.33)).toBeNull();
+    expect(normalizeCompetition("LOW", 33)).toBeCloseTo(0.33);
   });
 });

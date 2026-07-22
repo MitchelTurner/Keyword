@@ -259,8 +259,8 @@ export default function RecommendationsPanel({
                   <span className="mx-1.5 text-zinc-700">·</span>
                   <span className="tabular-nums text-zinc-400">
                     {k.competition != null
-                      ? `${Math.round(k.competition * 100)}% comp`
-                      : "comp n/a"}
+                      ? `${Math.round(k.competition * 100)}% Ads`
+                      : "Ads n/a"}
                   </span>
                 </span>
                 {k.aiReason && (

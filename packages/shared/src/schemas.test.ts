@@ -121,9 +121,23 @@ describe("SearchVolumeItemSchema", () => {
     ).toBeCloseTo(0.12);
   });
 
-  it("accepts Google Ads string competition labels when index missing", () => {
-    expect(normalizeCompetition("HIGH", null)).toBe(1);
-    expect(normalizeCompetition("LOW", null)).toBeCloseTo(0.33);
+  it("ignores Google Ads string labels when index is missing", () => {
+    expect(normalizeCompetition("HIGH", null)).toBeNull();
+    expect(normalizeCompetition("LOW", null)).toBeNull();
+  });
+
+  it("keeps competition_index even when it lands on a former bucket float", () => {
+    // Ads LOW band includes index 33 → 0.33; that is precise, not a placeholder.
+    expect(normalizeCompetition("LOW", 33)).toBeCloseTo(0.33);
+    expect(normalizeCompetition(null, 66)).toBeCloseTo(0.66);
+    expect(normalizeCompetition(null, 100)).toBe(1);
+  });
+
+  it("nulls coarse Labs bucket floats without an index", () => {
+    expect(normalizeCompetition(0.33, null)).toBeNull();
+    expect(normalizeCompetition(0.66, null)).toBeNull();
+    expect(normalizeCompetition(1, null)).toBeNull();
+    expect(normalizeCompetition(0.12, null)).toBeCloseTo(0.12);
   });
 
   it("detects bucketed competition placeholders", () => {

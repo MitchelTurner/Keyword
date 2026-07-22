@@ -224,18 +224,30 @@ export const SearchVolumeItemSchema = z
 
 export type SearchVolumeItem = z.infer<typeof SearchVolumeItemSchema>;
 
-const COMPETITION_LABELS: Record<string, number> = {
-  low: 0.33,
-  medium: 0.66,
-  high: 1,
-};
-
-/** Coarse Google Ads bucket midpoints — prefer competition_index when present. */
+/**
+ * Coarse LOW/MEDIUM/HIGH floats Labs (and label fallbacks) use.
+ * These are NOT keyword difficulty — never treat them as precise Ads index.
+ */
 const BUCKET_COMPETITION = new Set([0.33, 0.3333, 0.66, 0.6667, 1, 1.0]);
 
+/** True when a float is a coarse LOW/MEDIUM/HIGH bucket placeholder. */
+export function isBucketCompetition(
+  competition: number | null | undefined,
+): boolean {
+  if (competition == null || Number.isNaN(competition)) return false;
+  const rounded = Math.round(competition * 10000) / 10000;
+  return BUCKET_COMPETITION.has(rounded) || BUCKET_COMPETITION.has(competition);
+}
+
 /**
- * Normalize Google Ads competition into 0–1.
- * Prefer competition_index (0–100) — labels / bucket floats collapse to ~0.33/0.66/1.
+ * Normalize Google Ads competition into a precise 0–1 value.
+ *
+ * Prefer competition_index (0–100). String labels (LOW/MEDIUM/HIGH) and Labs
+ * bucket floats (0.33/0.66/1) are NOT measurements — return null so we never
+ * store fake "33% difficulty".
+ *
+ * Important: competition_index 33 → 0.33 is precise and must be kept. Callers
+ * must not run isBucketCompetition() on index-derived values.
  */
 export function normalizeCompetition(
   competition: number | string | null | undefined,
@@ -244,21 +256,24 @@ export function normalizeCompetition(
   if (competitionIndex != null && !Number.isNaN(competitionIndex)) {
     return Math.min(1, Math.max(0, competitionIndex / 100));
   }
-  if (typeof competition === "number" && !Number.isNaN(competition)) {
-    return competition > 1 ? competition / 100 : competition;
-  }
+  // Labels without an index are buckets, not a real measurement.
   if (typeof competition === "string") {
-    const mapped = COMPETITION_LABELS[competition.trim().toLowerCase()];
-    if (mapped != null) return mapped;
+    return null;
+  }
+  if (typeof competition === "number" && !Number.isNaN(competition)) {
+    const value = competition > 1 ? competition / 100 : competition;
+    const clamped = Math.min(1, Math.max(0, value));
+    // Labs often serializes every LOW as ~0.33 — drop those placeholders.
+    if (isBucketCompetition(clamped)) return null;
+    return clamped;
   }
   return null;
 }
 
-/** True when a competition value looks like a LOW/MEDIUM/HIGH bucket, not a precise index. */
-export function isBucketCompetition(
+/** Format stored 0–1 Ads competition for UI (e.g. 0.12 → "12%"). */
+export function formatCompetitionPct(
   competition: number | null | undefined,
-): boolean {
-  if (competition == null || Number.isNaN(competition)) return false;
-  const rounded = Math.round(competition * 10000) / 10000;
-  return BUCKET_COMPETITION.has(rounded) || BUCKET_COMPETITION.has(competition);
+): string {
+  if (competition == null || Number.isNaN(competition)) return "—";
+  return `${Math.round(competition * 100)}%`;
 }

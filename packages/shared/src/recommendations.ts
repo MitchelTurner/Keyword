@@ -1,5 +1,3 @@
-import { isBucketCompetition } from "./schemas";
-
 export type CuratedNiche = {
   id: string;
   seed: string;
@@ -383,10 +381,10 @@ export function diversifyApiSeedRecommendations(
     if (key === normalizeTerm(c.probe)) continue;
     const volume = c.volume ?? 0;
     if (volume < RECOMMENDED_SEED_MIN_VOLUME) continue;
-    // Require a real Ads competition value (not missing / bucket placeholder).
+    // Require a real Ads competition_index value (null = label/bucket only).
+    // Do NOT use isBucketCompetition here — index 33 normalizes to 0.33 and is valid.
     if (
       c.competition == null ||
-      isBucketCompetition(c.competition) ||
       c.competition > RECOMMENDED_SEED_MAX_COMPETITION
     ) {
       continue;

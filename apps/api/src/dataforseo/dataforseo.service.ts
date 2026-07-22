@@ -8,7 +8,6 @@ import {
   RECOMMENDED_SEED_MIN_VOLUME,
   SearchVolumeItemSchema,
   TOPIC_PROBES,
-  isBucketCompetition,
   normalizeCompetition,
   type ApiSeedCandidate,
   type SearchVolumeItem,
@@ -467,13 +466,11 @@ export class DataForSeoService {
       // Require Ads enrich — Labs LOW≈0.33 is not trustworthy alone.
       if (!row) continue;
       const volume = row.searchVolume ?? c.volume;
+      // enrichKeywords already dropped label/bucket placeholders via normalizeCompetition.
+      // Trust Ads competition_index values — including exact 0.33 (index 33).
       const competition = row.competition;
       if (volume == null || volume < RECOMMENDED_SEED_MIN_VOLUME) continue;
-      if (
-        competition == null ||
-        isBucketCompetition(competition) ||
-        competition > maxCompetition
-      ) {
+      if (competition == null || competition > maxCompetition) {
         continue;
       }
       out.push({
@@ -589,10 +586,9 @@ export class DataForSeoService {
       out.push({
         term,
         volume: info?.search_volume ?? null,
-        // Labs LOW often serializes as 0.33 — treat as unknown until Ads refine.
-        competition: isBucketCompetition(info?.competition ?? null)
-          ? null
-          : (info?.competition ?? null),
+        // Labs floats/labels are coarse — normalizeCompetition nulls buckets.
+        // Ads refine fills competition_index afterward.
+        competition: normalizeCompetition(info?.competition, null),
       });
     }
     return out;

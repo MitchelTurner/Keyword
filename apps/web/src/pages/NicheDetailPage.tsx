@@ -8,6 +8,7 @@ import {
 import { Link, useParams } from "react-router-dom";
 import { priceFloors } from "@prospector/shared";
 import {
+  adsCompPct,
   api,
   money,
   num,
@@ -493,7 +494,7 @@ export default function NicheDetailPage() {
               />
             </label>
             <label className="block text-xs text-zinc-500">
-              Max competition (0–1)
+              Max Ads competition (0–1 index)
               <input
                 type="number"
                 step="0.01"
@@ -578,7 +579,7 @@ export default function NicheDetailPage() {
         </div>
         <span className="text-xs text-zinc-600">
           {resultsView === "keywords"
-            ? "Normal keyword results — volume, CPC, competition"
+            ? "Normal keyword results — volume, CPC, Ads competition index"
             : "Clustered themes — click a row for details"}
           {assumptionsDirty && resultsView === "themes" && (
             <span className="ml-2 text-amber-300/90">· preview floors</span>
@@ -594,7 +595,7 @@ export default function NicheDetailPage() {
                 <th className="px-3 py-2.5 font-medium">Keyword</th>
                 <th className="px-3 py-2.5 font-medium">Volume</th>
                 <th className="px-3 py-2.5 font-medium">CPC</th>
-                <th className="px-3 py-2.5 font-medium">Comp</th>
+                <th className="px-3 py-2.5 font-medium">Ads comp</th>
                 <th className="px-3 py-2.5 font-medium">12-mo</th>
               </tr>
             </thead>
@@ -623,7 +624,7 @@ export default function NicheDetailPage() {
                     {k.cpc == null ? "—" : money(k.cpc)}
                   </td>
                   <td className="px-3 py-2.5 tabular-nums text-zinc-300">
-                    {k.competition == null ? "—" : k.competition.toFixed(2)}
+                    {adsCompPct(k.competition)}
                   </td>
                   <td className="px-3 py-2.5">
                     <Sparkline data={k.monthlyTrend} tone="flat" />
@@ -1142,7 +1143,7 @@ function OpportunityDrawer({
                   <th className="px-3 py-2">Term</th>
                   <th className="px-3 py-2">Volume</th>
                   <th className="px-3 py-2">CPC</th>
-                  <th className="px-3 py-2">Comp</th>
+                  <th className="px-3 py-2">Ads comp</th>
                   <th className="px-3 py-2">12-mo</th>
                 </tr>
               </thead>
@@ -1157,7 +1158,7 @@ function OpportunityDrawer({
                       {k.cpc == null ? "—" : money(k.cpc)}
                     </td>
                     <td className="px-3 py-2 tabular-nums text-zinc-300">
-                      {k.competition == null ? "—" : k.competition.toFixed(2)}
+                      {adsCompPct(k.competition)}
                     </td>
                     <td className="px-3 py-2">
                       <Sparkline data={k.monthlyTrend} tone="flat" />

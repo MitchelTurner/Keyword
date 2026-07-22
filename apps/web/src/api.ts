@@ -355,3 +355,9 @@ export function money(n: number, digits = 2) {
 export function num(n: number) {
   return new Intl.NumberFormat("en-US").format(n);
 }
+
+/** Format stored 0–1 Ads competition_index as a percent (e.g. 0.12 → "12%"). */
+export function adsCompPct(competition: number | null | undefined): string {
+  if (competition == null || Number.isNaN(competition)) return "—";
+  return `${Math.round(Math.min(1, Math.max(0, competition)) * 100)}%`;
+}

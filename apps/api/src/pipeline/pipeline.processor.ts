@@ -422,7 +422,8 @@ export class PipelineProcessor {
       term: k.term,
       searchVolume: k.searchVolume ?? 0,
       cpc: k.cpc ?? 0,
-      competition: k.competition ?? 0,
+      // Missing Ads competition_index → mid default (not 0 = "easiest").
+      competition: k.competition ?? 0.55,
     }));
 
     if (classifiable.length === 0) {

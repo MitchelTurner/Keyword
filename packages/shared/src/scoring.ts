@@ -52,9 +52,15 @@ export function scoreOpportunity(
   const avgCpc = volumeWeightedMean(
     enriched.map((k) => ({ value: k.cpc, volume: k.searchVolume })),
   );
-  const avgCompetition = volumeWeightedMean(
+  const measuredCompetition = volumeWeightedMean(
     enriched.map((k) => ({ value: k.competition, volume: k.searchVolume })),
   );
+  // When Ads competition_index is missing for all keywords, use a mid default
+  // instead of 0 (which would falsely treat the theme as easiest-to-win).
+  const hasCompetition = enriched.some(
+    (k) => k.competition != null && !Number.isNaN(k.competition),
+  );
+  const avgCompetition = hasCompetition ? measuredCompetition : 0.55;
 
   const convRate = assumptions.convRate > 0 ? assumptions.convRate : 0.015;
   const ltvCacRatio =

@@ -198,7 +198,24 @@ describe("recommendations", () => {
     expect(result.niches).toHaveLength(0);
   });
 
-  it("drops bucketed 0.33 competition placeholders", () => {
+  it("drops missing competition (bucket placeholders normalize to null)", () => {
+    const picks = diversifyApiSeedRecommendations(
+      [
+        {
+          term: "niche kayak mount",
+          category: "Outdoors",
+          probe: "kayak fishing",
+          volume: 800,
+          competition: null,
+        },
+      ],
+      [],
+      10,
+    );
+    expect(picks).toHaveLength(0);
+  });
+
+  it("keeps Ads competition_index 33% — 0.33 is precise, not a bucket drop", () => {
     const picks = diversifyApiSeedRecommendations(
       [
         {
@@ -212,7 +229,8 @@ describe("recommendations", () => {
       [],
       10,
     );
-    expect(picks).toHaveLength(0);
+    expect(picks).toHaveLength(1);
+    expect(picks[0]?.competition).toBeCloseTo(0.33);
   });
 
   it("searches seeds with min volume and max competition filters", () => {

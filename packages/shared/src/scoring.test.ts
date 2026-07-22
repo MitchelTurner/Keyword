@@ -69,4 +69,12 @@ describe("scoreOpportunity", () => {
     expect(scored.totalVolume).toBe(50);
     expect(scored.avgCpc).toBe(1);
   });
+
+  it("uses mid competition when all competition values are missing", () => {
+    const scored = scoreOpportunity(
+      [{ searchVolume: 500, cpc: 2, competition: null }],
+      { convRate: 0.02, ltvCacRatio: 3 },
+    );
+    expect(scored.avgCompetition).toBeCloseTo(0.55);
+  });
 });

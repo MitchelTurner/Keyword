@@ -7,13 +7,17 @@ import {
 } from "./decision";
 
 describe("explainDemandScore", () => {
-  it("factors volume, cpc, and competition", () => {
+  it("factors volume, soft CPC, and competition", () => {
     const b = explainDemandScore({
       totalVolume: 999,
       avgCpc: 10,
       avgCompetition: 0.5,
     });
-    expect(b.demandScore).toBeCloseTo(Math.log10(1000) * 10 * (1.05 - 0.5), 2);
+    const cpcFactor = 0.9 + Math.min(0.4, Math.log10(1 + 10) * 0.3);
+    expect(b.demandScore).toBeCloseTo(
+      Math.log10(1000) * (1.05 - 0.5) * cpcFactor,
+      2,
+    );
     expect(b.drivers.length).toBeGreaterThan(0);
   });
 });

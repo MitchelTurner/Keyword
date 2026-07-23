@@ -26,7 +26,7 @@ describe("volumeWeightedMean", () => {
 });
 
 describe("scoreOpportunity", () => {
-  it("computes floors and demand score from volume, CPC, competition", () => {
+  it("computes floors and demand score from volume, competition, soft CPC", () => {
     const scored = scoreOpportunity(
       [
         { searchVolume: 1000, cpc: 5, competition: 0.5 },
@@ -42,7 +42,8 @@ describe("scoreOpportunity", () => {
     expect(scored.annualPriceFloor).toBeCloseTo(50);
     expect(scored.monthlyPriceFloor).toBeCloseTo(50 / 12);
 
-    const base = Math.log10(2000 + 1) * 4 * (1.05 - 0.5);
+    const cpcFactor = 0.9 + Math.min(0.4, Math.log10(1 + 4) * 0.3);
+    const base = Math.log10(2000 + 1) * (1.05 - 0.5) * cpcFactor;
     expect(scored.demandScore).toBeCloseTo(base);
   });
 
@@ -56,6 +57,18 @@ describe("scoreOpportunity", () => {
       { convRate: 0.02, ltvCacRatio: 3 },
     );
     expect(low.demandScore).toBeGreaterThan(high.demandScore);
+  });
+
+  it("prefers high volume over high CPC at similar competition", () => {
+    const volumePlay = scoreOpportunity(
+      [{ searchVolume: 50_000, cpc: 0.4, competition: 0.3 }],
+      { convRate: 0.02, ltvCacRatio: 3 },
+    );
+    const cpcPlay = scoreOpportunity(
+      [{ searchVolume: 800, cpc: 18, competition: 0.3 }],
+      { convRate: 0.02, ltvCacRatio: 3 },
+    );
+    expect(volumePlay.demandScore).toBeGreaterThan(cpcPlay.demandScore);
   });
 
   it("excludes null-volume keywords from totals", () => {

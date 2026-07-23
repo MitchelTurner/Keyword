@@ -17,6 +17,7 @@ import {
   searchSeedKeywords,
   type ApiSeedCandidate,
   type CreateNicheDto,
+  type PromoteOpportunityDto,
   type RecommendationKeyword,
   type RejectSeedDto,
   type SearchSeedKeywordsDto,
@@ -32,6 +33,7 @@ import { PipelineService } from "../pipeline/pipeline.service";
 import { CostService } from "../cost/cost.service";
 import { DataForSeoService } from "../dataforseo/dataforseo.service";
 import { ClaudeService } from "../claude/claude.service";
+import { SitesService } from "../sites/sites.service";
 import {
   DEFAULT_RUBRIC,
   attachDecisionSupport,
@@ -97,6 +99,7 @@ export class NichesService {
     private readonly dataForSeo: DataForSeoService,
     private readonly claude: ClaudeService,
     private readonly seedJobs: SeedSearchJobStore,
+    private readonly sites: SitesService,
   ) {}
 
   estimateCost() {
@@ -160,6 +163,10 @@ export class NichesService {
       annualPriceFloor: number;
       monthlyPriceFloor: number;
       demandScore: number;
+      serpSnapshot?: Prisma.JsonValue | null;
+      serpQuery?: string | null;
+      serpFetchedAt?: Date | null;
+      organicSoftness?: number | null;
       pinned: boolean;
       notes: string;
       reviewStatus: string;
@@ -195,6 +202,10 @@ export class NichesService {
       annualPriceFloor: o.annualPriceFloor,
       monthlyPriceFloor: o.monthlyPriceFloor,
       demandScore: o.demandScore,
+      serpSnapshot: o.serpSnapshot ?? null,
+      serpQuery: o.serpQuery ?? null,
+      serpFetchedAt: o.serpFetchedAt ?? null,
+      organicSoftness: o.organicSoftness ?? null,
       pinned: o.pinned,
       notes: o.notes,
       reviewStatus: o.reviewStatus,
@@ -277,6 +288,15 @@ export class NichesService {
 
     const oppCount = opportunities.length || 1;
     const passCount = opportunities.filter((o) => o.decision.rubric.pass).length;
+    const buildCount = opportunities.filter(
+      (o) => o.decision.verdict.verdict === "build",
+    ).length;
+    const watchCount = opportunities.filter(
+      (o) => o.decision.verdict.verdict === "watch",
+    ).length;
+    const killCount = opportunities.filter(
+      (o) => o.decision.verdict.verdict === "kill",
+    ).length;
 
     return {
       id: niche.id,
@@ -299,6 +319,9 @@ export class NichesService {
       decisionSummary: {
         passCount,
         failCount: opportunities.length - passCount,
+        buildCount,
+        watchCount,
+        killCount,
         defaults: {
           rubricConfig: DEFAULT_RUBRIC,
         },
@@ -355,6 +378,8 @@ export class NichesService {
     return {
       ...decided,
       nicheId: opportunity.nicheId,
+      serpQuery: opportunity.serpQuery,
+      serpFetchedAt: opportunity.serpFetchedAt,
       keywords: opportunity.keywords.map((k) => ({
         id: k.id,
         term: k.term,
@@ -420,10 +445,81 @@ export class NichesService {
 
     items.sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      const scoreA = a.decision.verdict.score;
+      const scoreB = b.decision.verdict.score;
+      if (scoreA !== scoreB) return scoreB - scoreA;
       return b.demandScore - a.demandScore;
     });
 
     return { count: items.length, items };
+  }
+
+  /**
+   * Promote an opportunity into My Sites: create a TrackedSite and copy
+   * top theme keywords so the operator can expand ideas / check domains.
+   */
+  async promoteOpportunity(
+    nicheId: string,
+    oppId: string,
+    dto: PromoteOpportunityDto,
+  ) {
+    const niche = await this.prisma.niche.findUnique({ where: { id: nicheId } });
+    if (!niche) throw new NotFoundException("Niche not found");
+
+    const opportunity = await this.prisma.opportunity.findFirst({
+      where: { id: oppId, nicheId },
+      include: {
+        keywords: {
+          orderBy: { searchVolume: "desc" },
+          take: dto.keywordLimit ?? 12,
+          select: { term: true },
+        },
+      },
+    });
+    if (!opportunity) throw new NotFoundException("Opportunity not found");
+
+    const siteName =
+      dto.siteName?.trim() ||
+      opportunity.productDescription.trim().slice(0, 120) ||
+      niche.seedTerm;
+
+    const site = await this.sites.createSite({
+      name: siteName,
+      domain: dto.domain,
+      notes: `Promoted from niche "${niche.seedTerm}" · ${opportunity.productDescription}`,
+    });
+
+    const terms = opportunity.keywords.map((k) => k.term).filter(Boolean);
+    if (terms.length > 0) {
+      await this.sites.addKeywords(site.id, {
+        terms,
+        enrich: dto.enrich !== false,
+      });
+    }
+
+    // Mark as building so it shows in portfolio.
+    await this.prisma.opportunity.update({
+      where: { id: opportunity.id },
+      data: {
+        reviewStatus: "building",
+        pinned: true,
+      },
+    });
+
+    const topic = encodeURIComponent(
+      opportunity.productDescription || niche.seedTerm,
+    );
+
+    return {
+      siteId: site.id,
+      site,
+      keywordCount: terms.length,
+      opportunityId: opportunity.id,
+      links: {
+        site: `/sites/${site.id}`,
+        domains: `/domains?topic=${topic}`,
+      },
+    };
   }
 
   async recommendations(

@@ -1,7 +1,12 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Job } from "bullmq";
 import { Prisma } from "@prisma/client";
-import { MIN_KEYWORD_VOLUME, scoreOpportunity } from "@prospector/shared";
+import {
+  MIN_KEYWORD_VOLUME,
+  annotateSerpSnapshot,
+  organicSoftnessScore,
+  scoreOpportunity,
+} from "@prospector/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { DataForSeoService } from "../dataforseo/dataforseo.service";
 import { ClaudeService } from "../claude/claude.service";
@@ -604,6 +609,16 @@ export class PipelineProcessor {
       });
     }
 
+    // Organic SERP snapshots for decision softness (top themes by demand).
+    try {
+      await this.enrichOpportunitySerp(nicheId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Opportunity SERP enrichment failed for ${nicheId}: ${message}`,
+      );
+    }
+
     // Second AI pass: product angle + monetization + wedge for scored themes.
     try {
       await this.enrichBuildBriefs(nicheId);
@@ -618,6 +633,49 @@ export class PipelineProcessor {
       where: { id: nicheId },
       data: { status: "DONE", error: null },
     });
+  }
+
+  /** Fetch organic SERP for each theme's top keyword (cost-capped). */
+  private async enrichOpportunitySerp(nicheId: string) {
+    const opportunities = await this.prisma.opportunity.findMany({
+      where: { nicheId },
+      orderBy: { demandScore: "desc" },
+      take: 12,
+      select: {
+        id: true,
+        keywords: {
+          orderBy: { searchVolume: "desc" },
+          take: 1,
+          select: { term: true },
+        },
+      },
+    });
+
+    for (const opp of opportunities) {
+      const term = opp.keywords[0]?.term?.trim();
+      if (!term) continue;
+      try {
+        const raw = await this.dataForSeo.fetchOrganicSerpPreview(term, {
+          depth: 5,
+        });
+        const serp = annotateSerpSnapshot(raw);
+        const soft = organicSoftnessScore(serp);
+        await this.prisma.opportunity.update({
+          where: { id: opp.id },
+          data: {
+            serpSnapshot: serp,
+            serpQuery: term,
+            serpFetchedAt: new Date(),
+            organicSoftness: soft.score,
+          },
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `SERP preview failed for opportunity ${opp.id} (${term}): ${message}`,
+        );
+      }
+    }
   }
 
   private async enrichBuildBriefs(nicheId: string) {

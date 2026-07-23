@@ -4,6 +4,7 @@ export * from "./cost-estimate";
 export * from "./trend";
 export * from "./economics";
 export * from "./decision";
+export * from "./verdict";
 export * from "./recommendations";
 export * from "./keyword-relevance";
 export * from "./keyword-thresholds";

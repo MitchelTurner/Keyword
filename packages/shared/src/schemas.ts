@@ -97,6 +97,20 @@ export const UpdateOpportunitySchema = z
   );
 export type UpdateOpportunityDto = z.infer<typeof UpdateOpportunitySchema>;
 
+export const PromoteOpportunitySchema = z.object({
+  siteName: z.string().trim().min(1).max(120).optional(),
+  domain: z
+    .string()
+    .trim()
+    .max(200)
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  /** Max theme keywords to copy onto the tracked site (default 12). */
+  keywordLimit: z.number().int().min(1).max(50).optional(),
+  enrich: z.boolean().optional(),
+});
+export type PromoteOpportunityDto = z.infer<typeof PromoteOpportunitySchema>;
+
 export const MonthlyTrendPointSchema = z.object({
   year: z.number(),
   month: z.number().min(1).max(12),

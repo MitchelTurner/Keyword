@@ -70,10 +70,12 @@ export function scoreOpportunity(
   const annualPriceFloor = impliedCac / ltvCacRatio;
   const monthlyPriceFloor = annualPriceFloor / 12;
 
-  // Reward commercial volume and CPC; prefer lower competition (winnability).
+  // Management-SaaS thesis: volume + organic/ads winnability first.
+  // CPC is a soft commercial signal (±~20%), not the primary multiplier.
   const competitionFactor = 1.05 - Math.min(1, Math.max(0, avgCompetition));
+  const cpcFactor = 0.9 + Math.min(0.4, Math.log10(1 + avgCpc) * 0.3);
   const demandScore =
-    Math.log10(totalVolume + 1) * avgCpc * competitionFactor;
+    Math.log10(totalVolume + 1) * competitionFactor * cpcFactor;
 
   return {
     totalVolume,

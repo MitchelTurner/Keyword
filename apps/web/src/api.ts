@@ -57,6 +57,45 @@ export type TrendInfo = {
   series: Array<{ year: number; month: number; search_volume: number }>;
 };
 
+export type VerdictLabel = "build" | "watch" | "kill";
+
+export type SerpPageType =
+  | "ugc"
+  | "directory"
+  | "content"
+  | "marketplace"
+  | "saas"
+  | "authority"
+  | "other";
+
+export type OpportunitySerpItem = {
+  rank: number;
+  domain: string;
+  title: string;
+  pageType?: SerpPageType;
+};
+
+export type VerdictSupport = {
+  verdict: VerdictLabel;
+  score: number;
+  rationale: string;
+  organicSoftness: number | null;
+  tam: {
+    monthlySearches: number;
+    adMarketUsd: number;
+    saasArrHintUsd: number;
+    score: number;
+    summary: string;
+  };
+  factors: Array<{
+    id: string;
+    label: string;
+    score: number;
+    weight: number;
+    detail: string;
+  }>;
+};
+
 export type DecisionSupport = {
   rank: number;
   breakdown: {
@@ -81,6 +120,7 @@ export type DecisionSupport = {
     whyRanks: string;
     nextStep: string;
   };
+  verdict: VerdictSupport;
 };
 
 export type OpportunityRow = {
@@ -100,6 +140,10 @@ export type OpportunityRow = {
   annualPriceFloor: number;
   monthlyPriceFloor: number;
   demandScore: number;
+  serp?: OpportunitySerpItem[] | null;
+  serpQuery?: string | null;
+  serpFetchedAt?: string | null;
+  organicSoftness?: number | null;
   pinned: boolean;
   notes: string;
   reviewStatus: string;
@@ -138,6 +182,9 @@ export type NicheDetail = {
   decisionSummary: {
     passCount: number;
     failCount: number;
+    buildCount?: number;
+    watchCount?: number;
+    killCount?: number;
   };
   opportunities: OpportunityRow[];
   keywords: Array<{
@@ -459,6 +506,26 @@ export const api = {
   getNiche: (id: string) => request<NicheDetail>(`/niches/${id}`),
   getOpportunity: (nicheId: string, oppId: string) =>
     request<OpportunityDetail>(`/niches/${nicheId}/opportunities/${oppId}`),
+  promoteOpportunity: (
+    nicheId: string,
+    oppId: string,
+    body?: {
+      siteName?: string;
+      domain?: string;
+      keywordLimit?: number;
+      enrich?: boolean;
+    },
+  ) =>
+    request<{
+      siteId: string;
+      keywordCount: number;
+      opportunityId: string;
+      links: { site: string; domains: string };
+      site: { id: string; name: string; domain: string | null };
+    }>(`/niches/${nicheId}/opportunities/${oppId}/promote`, {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    }),
   updateOpportunity: (
     nicheId: string,
     oppId: string,

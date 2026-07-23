@@ -11,9 +11,11 @@ import {
 import type { Response } from "express";
 import {
   CreateNicheSchema,
+  PromoteOpportunitySchema,
   UpdateNicheAssumptionsSchema,
   UpdateOpportunitySchema,
   type CreateNicheDto,
+  type PromoteOpportunityDto,
   type UpdateNicheAssumptionsDto,
   type UpdateOpportunityDto,
 } from "@prospector/shared";
@@ -74,6 +76,16 @@ export class NichesController {
     body: UpdateOpportunityDto,
   ) {
     return this.niches.updateOpportunity(id, oppId, body);
+  }
+
+  @Post(":id/opportunities/:oppId/promote")
+  promoteOpportunity(
+    @Param("id") id: string,
+    @Param("oppId") oppId: string,
+    @Body(new ZodValidationPipe(PromoteOpportunitySchema))
+    body: PromoteOpportunityDto,
+  ) {
+    return this.niches.promoteOpportunity(id, oppId, body);
   }
 
   @Patch(":id")

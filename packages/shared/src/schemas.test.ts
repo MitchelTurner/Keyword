@@ -7,6 +7,7 @@ import {
   ClaudeSeedMonetizationReviewSchema,
   ClaudeThemeBuildBriefSchema,
   CreateTrackedSiteSchema,
+  PromoteOpportunitySchema,
   RejectSeedSchema,
   CreateNicheSchema,
   SearchSeedKeywordsSchema,
@@ -251,6 +252,19 @@ describe("tracked site schemas", () => {
     });
     expect(parsed.terms).toEqual(["habit tracker", "morning routine"]);
     expect(parsed.enrich).toBe(true);
+  });
+});
+
+describe("PromoteOpportunitySchema", () => {
+  it("accepts empty body and optional fields", () => {
+    expect(PromoteOpportunitySchema.parse({})).toEqual({});
+    const parsed = PromoteOpportunitySchema.parse({
+      siteName: "FleetOps",
+      keywordLimit: 8,
+      enrich: false,
+    });
+    expect(parsed.siteName).toBe("FleetOps");
+    expect(parsed.keywordLimit).toBe(8);
   });
 });
 

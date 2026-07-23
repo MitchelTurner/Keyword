@@ -22,11 +22,13 @@ import StatusBadge from "../components/StatusBadge";
 import Sparkline from "../components/Sparkline";
 import TrendBadge from "../components/TrendBadge";
 import RubricBadge from "../components/RubricBadge";
+import VerdictBadge from "../components/VerdictBadge";
 import PipelineProgress from "../components/PipelineProgress";
 import Panel from "../components/Panel";
 
 type SortKey =
   | "demandScore"
+  | "verdictScore"
   | "totalVolume"
   | "avgCpc"
   | "impliedCac"
@@ -62,15 +64,15 @@ export default function NicheDetailPage() {
   const [convRate, setConvRate] = useState("");
   const [ltvCacRatio, setLtvCacRatio] = useState("");
   const [rubricConfig, setRubricConfig] = useState<RubricConfig>({
-    minMonthlyFloor: 49,
+    minMonthlyFloor: 19,
     minVolume: 500,
     minPain: 3,
-    maxCompetition: 0.8,
+    maxCompetition: 0.75,
     rejectDeclining: true,
   });
   const [saving, setSaving] = useState(false);
   const [savingDecision, setSavingDecision] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("demandScore");
+  const [sortKey, setSortKey] = useState<SortKey>("verdictScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [selectedOppId, setSelectedOppId] = useState<string | null>(null);
   const [oppDetail, setOppDetail] = useState<OpportunityDetail | null>(null);
@@ -136,6 +138,7 @@ export default function NicheDetailPage() {
         annualPriceFloor: floors.annualPriceFloor,
         monthlyPriceFloor: floors.monthlyPriceFloor,
         trendScore: o.trend.score,
+        verdictScore: o.decision.verdict.score,
       };
     });
 
@@ -285,6 +288,10 @@ export default function NicheDetailPage() {
             <StatusBadge status={niche.status} />
             <MetaStat label="keywords" value={num(niche.keywordCount)} />
             <MetaStat label="enriched" value={num(niche.enrichedKeywordCount)} />
+            <MetaStat
+              label="verdict"
+              value={`${niche.decisionSummary.buildCount ?? 0} build · ${niche.decisionSummary.watchCount ?? 0} watch · ${niche.decisionSummary.killCount ?? 0} kill`}
+            />
             <MetaStat
               label="rubric"
               value={`${niche.decisionSummary.passCount} pass / ${niche.decisionSummary.failCount} fail`}
@@ -657,6 +664,20 @@ export default function NicheDetailPage() {
                     </button>
                   </th>
                 ))}
+                <th className="px-3 py-2.5 font-medium">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort("verdictScore")}
+                    className="hover:text-zinc-300"
+                  >
+                    Verdict
+                    {sortKey === "verdictScore"
+                      ? sortDir === "asc"
+                        ? " ↑"
+                        : " ↓"
+                      : ""}
+                  </button>
+                </th>
                 <th className="px-3 py-2.5 font-medium">Rubric</th>
                 {(
                   [
@@ -685,7 +706,7 @@ export default function NicheDetailPage() {
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="px-3 py-10 text-center text-zinc-500"
                   >
                     {IN_FLIGHT.has(niche.status)
@@ -826,7 +847,7 @@ function OpportunityTableRow({
   preview,
   onSelect,
 }: {
-  row: OpportunityRow & { trendScore: number };
+  row: OpportunityRow & { trendScore: number; verdictScore: number };
   selected: boolean;
   preview: boolean;
   onSelect: () => void;
@@ -861,6 +882,12 @@ function OpportunityTableRow({
             {row.reviewStatus}
           </span>
         )}
+      </td>
+      <td className="px-3 py-2.5">
+        <VerdictBadge
+          verdict={row.decision.verdict.verdict}
+          score={row.decision.verdict.score}
+        />
       </td>
       <td className="px-3 py-2.5">
         <RubricBadge
@@ -915,11 +942,18 @@ function OpportunityDrawer({
 }) {
   const [notes, setNotes] = useState(detail.notes);
   const [saving, setSaving] = useState(false);
+  const [promoting, setPromoting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [promoteLinks, setPromoteLinks] = useState<{
+    site: string;
+    domains: string;
+  } | null>(null);
   const { decision } = detail;
+  const verdict = decision.verdict;
 
   useEffect(() => {
     setNotes(detail.notes);
+    setPromoteLinks(null);
   }, [detail.id, detail.notes]);
 
   async function patch(body: {
@@ -936,6 +970,26 @@ function OpportunityDrawer({
       setSaveError(String(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onPromote() {
+    setPromoting(true);
+    setSaveError(null);
+    try {
+      const result = await api.promoteOpportunity(nicheId, detail.id, {
+        keywordLimit: 12,
+      });
+      setPromoteLinks(result.links);
+      onUpdated({
+        ...detail,
+        pinned: true,
+        reviewStatus: "building",
+      });
+    } catch (err) {
+      setSaveError(String(err));
+    } finally {
+      setPromoting(false);
     }
   }
 
@@ -974,6 +1028,7 @@ function OpportunityDrawer({
 
         <div className="space-y-4 p-4">
           <div className="flex flex-wrap items-center gap-3">
+            <VerdictBadge verdict={verdict.verdict} score={verdict.score} />
             <RubricBadge
               pass={decision.rubric.pass}
               checks={decision.rubric.checks}
@@ -985,6 +1040,10 @@ function OpportunityDrawer({
               tone={detail.trend.direction}
             />
           </div>
+
+          <p className="rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-300">
+            {verdict.rationale}
+          </p>
 
           <div className="flex flex-wrap items-end gap-3">
             <button
@@ -998,6 +1057,14 @@ function OpportunityDrawer({
               }`}
             >
               {detail.pinned ? "Unpin" : "Pin"}
+            </button>
+            <button
+              type="button"
+              disabled={promoting || saving}
+              onClick={() => void onPromote()}
+              className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:opacity-40"
+            >
+              {promoting ? "Promoting…" : "Promote → My Sites"}
             </button>
             <label className="text-xs text-zinc-500">
               Review status
@@ -1015,6 +1082,22 @@ function OpportunityDrawer({
               </select>
             </label>
           </div>
+          {promoteLinks && (
+            <div className="flex flex-wrap gap-3 text-sm">
+              <Link
+                to={promoteLinks.site}
+                className="text-emerald-300 hover:underline"
+              >
+                Open tracked site →
+              </Link>
+              <Link
+                to={promoteLinks.domains}
+                className="text-emerald-300 hover:underline"
+              >
+                Domain ideas →
+              </Link>
+            </div>
+          )}
 
           <label className="block text-xs text-zinc-500">
             Notes
@@ -1045,10 +1128,7 @@ function OpportunityDrawer({
               <h3 className="text-sm font-medium text-zinc-200">
                 Decision support
               </h3>
-              <RubricBadge
-                pass={decision.rubric.pass}
-                checks={decision.rubric.checks}
-              />
+              <VerdictBadge verdict={verdict.verdict} score={verdict.score} />
             </div>
             <div className="space-y-2 text-sm leading-relaxed text-zinc-300">
               <p>{decision.brief.summary}</p>
@@ -1056,6 +1136,79 @@ function OpportunityDrawer({
               <p className="rounded-md border border-emerald-900/50 bg-emerald-950/30 px-2.5 py-1.5 text-emerald-300/95">
                 Next: {decision.brief.nextStep}
               </p>
+            </div>
+
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                TAM / money model
+              </p>
+              <p className="mt-1 text-sm text-zinc-300">{verdict.tam.summary}</p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Ad market {money(verdict.tam.adMarketUsd)} · SaaS ARR hint{" "}
+                {money(verdict.tam.saasArrHintUsd, 0)}
+              </p>
+            </div>
+
+            {(detail.serp?.length || verdict.organicSoftness != null) && (
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                  Organic SERP
+                  {detail.serpQuery ? ` · “${detail.serpQuery}”` : ""}
+                  {verdict.organicSoftness != null
+                    ? ` · softness ${(verdict.organicSoftness * 100).toFixed(0)}%`
+                    : ""}
+                </p>
+                {detail.serp && detail.serp.length > 0 ? (
+                  <ul className="mt-1.5 space-y-1">
+                    {detail.serp.map((item) => (
+                      <li
+                        key={`${item.rank}-${item.domain}`}
+                        className="flex flex-wrap items-baseline gap-x-2 rounded px-1.5 py-1 text-sm hover:bg-zinc-900/80"
+                      >
+                        <span className="tabular-nums text-zinc-500">
+                          #{item.rank}
+                        </span>
+                        <span className="font-medium text-zinc-200">
+                          {item.domain}
+                        </span>
+                        {item.pageType && (
+                          <span className="rounded bg-zinc-800/80 px-1 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
+                            {item.pageType}
+                          </span>
+                        )}
+                        <span className="w-full text-xs text-zinc-500 sm:w-auto">
+                          {item.title}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    No SERP snapshot yet — re-run the niche pipeline to fetch
+                    organic results.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                Verdict factors
+              </p>
+              <ul className="mt-1.5 space-y-1">
+                {verdict.factors.map((f) => (
+                  <li
+                    key={f.id}
+                    className="flex flex-wrap items-baseline gap-x-2 rounded px-1.5 py-1 text-sm hover:bg-zinc-900/80"
+                  >
+                    <span className="tabular-nums text-emerald-300/90">
+                      {(f.score * 100).toFixed(0)}
+                    </span>
+                    <span className="text-zinc-200">{f.label}</span>
+                    <span className="text-xs text-zinc-500">{f.detail}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
             {(detail.productAngle ||
               detail.monetizationModel ||
@@ -1089,9 +1242,9 @@ function OpportunityDrawer({
                 Demand breakdown
               </p>
               <p className="mt-1 font-mono text-sm text-zinc-200">
-                {decision.breakdown.volumeFactor} ×{" "}
-                {decision.breakdown.cpcFactor} ×{" "}
-                {decision.breakdown.competitionFactor} ={" "}
+                vol {decision.breakdown.volumeFactor} × comp{" "}
+                {decision.breakdown.competitionFactor} × cpc̃{" "}
+                {decision.breakdown.cpcFactor} ={" "}
                 <span className="text-emerald-300">
                   {decision.breakdown.demandScore}
                 </span>

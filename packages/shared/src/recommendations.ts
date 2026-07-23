@@ -354,8 +354,8 @@ export function isCalculatorOrGeneratorSeed(term: string): boolean {
 }
 
 /**
- * Rank seed opportunity: high volume + low competition + commercial CPC.
- * Missing competition is treated as mid (0.55); missing CPC as $0 (no boost).
+ * Rank seed opportunity: volume + low competition first; CPC is a soft signal.
+ * Missing competition is treated as mid (0.55); missing CPC as neutral.
  */
 export function seedOpportunityScore(
   volume: number | null | undefined,
@@ -368,7 +368,7 @@ export function seedOpportunityScore(
     competition == null
       ? 0.55
       : Math.min(1, Math.max(0, competition));
-  const cpcBoost = 1 + Math.log10(1 + Math.max(0, cpc ?? 0));
+  const cpcBoost = 0.9 + Math.min(0.4, Math.log10(1 + Math.max(0, cpc ?? 0)) * 0.3);
   return Math.log10(vol + 1) * (1.05 - comp) * cpcBoost;
 }
 

@@ -4,6 +4,7 @@ import { api, money, num, type PortfolioItem } from "../api";
 import Sparkline from "../components/Sparkline";
 import TrendBadge from "../components/TrendBadge";
 import RubricBadge from "../components/RubricBadge";
+import VerdictBadge from "../components/VerdictBadge";
 import PageHeader from "../components/PageHeader";
 import EmptyState from "../components/EmptyState";
 
@@ -22,23 +23,25 @@ export default function PortfolioPage() {
 
   const stats = useMemo(() => {
     const pass = items.filter((i) => i.decision.rubric.pass).length;
+    const build = items.filter((i) => i.decision.verdict.verdict === "build").length;
     const building = items.filter((i) => i.reviewStatus === "building").length;
     const watching = items.filter((i) => i.reviewStatus === "watching").length;
-    return { pass, building, watching, total: items.length };
+    return { pass, build, building, watching, total: items.length };
   }, [items]);
 
   return (
     <div className="space-y-6 animate-fade-up">
       <PageHeader
         title="Portfolio"
-        description="Pinned, watching, and building themes across niches — sorted by demand score."
+        description="Pinned, watching, and building themes across niches — sorted by Build/Watch/Kill score."
       />
 
       {!loading && items.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {(
             [
               ["Tracked", stats.total],
+              ["Build verdict", stats.build],
               ["Pass rubric", stats.pass],
               ["Watching", stats.watching],
               ["Building", stats.building],
@@ -72,6 +75,7 @@ export default function PortfolioPage() {
               <th className="px-3 py-2.5">Theme</th>
               <th className="px-3 py-2.5">Niche</th>
               <th className="px-3 py-2.5">Status</th>
+              <th className="px-3 py-2.5">Verdict</th>
               <th className="px-3 py-2.5">Rubric</th>
               <th className="px-3 py-2.5">Trend</th>
               <th className="px-3 py-2.5">12-mo</th>
@@ -84,14 +88,14 @@ export default function PortfolioPage() {
             {loading &&
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i} className="border-t border-zinc-800/80">
-                  <td className="px-3 py-3" colSpan={9}>
+                  <td className="px-3 py-3" colSpan={10}>
                     <div className="skeleton h-4 w-full" />
                   </td>
                 </tr>
               ))}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <EmptyState
                     title="Watchlist is empty"
                     description="Pin an opportunity or set review status to watching/building from a niche detail page."
@@ -132,6 +136,12 @@ export default function PortfolioPage() {
                   <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[11px] capitalize text-zinc-300">
                     {item.reviewStatus === "none" ? "pinned" : item.reviewStatus}
                   </span>
+                </td>
+                <td className="px-3 py-2.5">
+                  <VerdictBadge
+                    verdict={item.decision.verdict.verdict}
+                    score={item.decision.verdict.score}
+                  />
                 </td>
                 <td className="px-3 py-2.5">
                   <RubricBadge

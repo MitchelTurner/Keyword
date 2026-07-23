@@ -75,6 +75,12 @@ model Opportunity {
   annualPriceFloor   Float
   monthlyPriceFloor  Float
   demandScore        Float
+  /// Organic SERP snapshot for the theme's top keyword (JSON array).
+  serpSnapshot       Json?
+  serpQuery          String?
+  serpFetchedAt      DateTime?
+  /// 0..1 organic softness derived from serpSnapshot (higher = easier).
+  organicSoftness    Float?
   pinned             Boolean   @default(false)
   notes              String    @default("")
   reviewStatus       String    @default("none") // none | watching | building | passed

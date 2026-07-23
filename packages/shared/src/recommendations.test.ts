@@ -29,10 +29,13 @@ describe("recommendations", () => {
     expect(lowComp).toBeGreaterThan(highComp);
   });
 
-  it("boosts score for higher CPC at equal volume and competition", () => {
+  it("applies only a soft CPC lift at equal volume and competition", () => {
     const cheap = seedOpportunityScore(2000, 0.2, 0.5);
     const pricey = seedOpportunityScore(2000, 0.2, 8);
     expect(pricey).toBeGreaterThan(cheap);
+    // Volume still dominates: 25k @ $0.40 beats 2k @ $8.
+    const volumePlay = seedOpportunityScore(25_000, 0.2, 0.4);
+    expect(volumePlay).toBeGreaterThan(pricey);
   });
 
   it("low-CPC score prefers pennies over dollar clicks at equal volume", () => {

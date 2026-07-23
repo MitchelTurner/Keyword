@@ -54,10 +54,11 @@ export type BuildBrief = {
 };
 
 export const DEFAULT_RUBRIC: RubricConfig = {
-  minMonthlyFloor: 49,
+  // Softer floor: CPC-implied floors understate management SaaS WTP.
+  minMonthlyFloor: 19,
   minVolume: 500,
   minPain: 3,
-  maxCompetition: 0.8,
+  maxCompetition: 0.75,
   rejectDeclining: true,
 };
 
@@ -67,22 +68,26 @@ export function explainDemandScore(input: {
   avgCompetition: number;
 }): DemandBreakdown {
   const volumeFactor = Math.log10(input.totalVolume + 1);
-  const cpcFactor = input.avgCpc;
+  // Soft commercial signal — aligned with scoreOpportunity (not raw CPC).
+  const cpcFactor = 0.9 + Math.min(0.4, Math.log10(1 + input.avgCpc) * 0.3);
   const competitionFactor =
     1.05 - Math.min(1, Math.max(0, input.avgCompetition));
-  const demandScore = volumeFactor * cpcFactor * competitionFactor;
+  const demandScore = volumeFactor * competitionFactor * cpcFactor;
 
   const drivers: string[] = [];
-  if (volumeFactor >= 3) drivers.push("Strong search volume lifts the log factor");
-  else if (volumeFactor < 2) drivers.push("Low volume caps upside");
+  if (volumeFactor >= 3.5)
+    drivers.push("Strong search volume — primary demand driver");
+  else if (volumeFactor < 2.5) drivers.push("Low volume caps upside");
 
-  if (cpcFactor >= 10) drivers.push("High CPC signals commercial intent / pain");
-  else if (cpcFactor < 2) drivers.push("Low CPC weakens pricing power signal");
+  if (input.avgCompetition <= 0.35)
+    drivers.push("Lower ads competition — room to win traffic");
+  else if (input.avgCompetition >= 0.7)
+    drivers.push("High ads competition — crowded auction");
 
-  if (input.avgCompetition >= 0.7)
-    drivers.push("High competition — crowded auction");
-  else if (input.avgCompetition <= 0.35)
-    drivers.push("Lower competition — room to win traffic");
+  if (input.avgCpc >= 5)
+    drivers.push("CPC hints commercial intent (soft signal only)");
+  else if (input.avgCpc > 0 && input.avgCpc <= 1)
+    drivers.push("Low CPC — fine for management SaaS if organic is soft");
 
   if (!drivers.length) drivers.push("Balanced factors — no single dominant driver");
 
@@ -179,15 +184,15 @@ export function buildBrief(input: BuildBriefInput): BuildBrief {
   let nextStep: string;
   if (input.trendDirection === "declining") {
     nextStep = "Check seasonality / SERP before investing — demand is cooling.";
-  } else if (input.monthlyPriceFloor < 49) {
+  } else if (input.avgCompetition >= 0.75) {
     nextStep =
-      "Pressure-test willingness to pay; floor may be too low to pursue.";
-  } else if (input.avgCompetition >= 0.8) {
+      "Ads auction is crowded — need a soft organic SERP or sharper wedge.";
+  } else if (input.monthlyPriceFloor < 19) {
     nextStep =
-      "SERP is crowded — look for a sharper wedge or long-tail angle.";
+      "CPC floor is thin — validate SaaS WTP via TAM / buyer interviews.";
   } else {
     nextStep =
-      "Pin it, skim top keywords, then spot-check SERPs for real demand.";
+      "Check organic SERP softness, then promote to a tracked site if Build.";
   }
 
   return { summary, whyRanks, nextStep };

@@ -1,6 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
+  BulkKeywordDifficultyItemSchema,
+  BulkTrafficEstimationItemSchema,
   KeywordIdeaItemSchema,
   LabsKeywordMetricsSchema,
   LOW_CPC_TOPIC_PROBES,
@@ -624,6 +626,99 @@ export class DataForSeoService {
         title: title || domain || "untitled",
       });
       if (out.length >= depth) break;
+    }
+    return out;
+  }
+
+  /**
+   * Real Labs 0..100 ranking difficulty score per keyword — replaces the
+   * page-type heuristic with an authoritative organic-competition signal.
+   */
+  async fetchKeywordDifficulty(
+    keywords: string[],
+    nicheId?: string,
+  ): Promise<Map<string, number>> {
+    const unique = [
+      ...new Set(keywords.map((k) => k.trim()).filter(Boolean)),
+    ].slice(0, 1000);
+    const out = new Map<string, number>();
+    if (unique.length === 0) return out;
+
+    const payload = [
+      {
+        keywords: unique,
+        location_code: this.locationCode(),
+        language_code: this.languageCode(),
+      },
+    ];
+
+    const json = await this.request<{
+      tasks: Array<{
+        result?: Array<{ items?: unknown[] } | null> | null;
+      }>;
+    }>(
+      "/dataforseo_labs/google/bulk_keyword_difficulty/live",
+      payload,
+      nicheId,
+    );
+
+    const items = json.tasks?.[0]?.result?.[0]?.items ?? [];
+    for (const raw of items) {
+      const parsed = BulkKeywordDifficultyItemSchema.safeParse(raw);
+      if (!parsed.success || parsed.data.keyword_difficulty == null) continue;
+      out.set(
+        parsed.data.keyword.trim().toLowerCase(),
+        parsed.data.keyword_difficulty,
+      );
+    }
+    return out;
+  }
+
+  /**
+   * Estimated monthly organic traffic (etv) per domain — quantifies whether
+   * a SERP incumbent is a tiny blog or a well-trafficked competitor.
+   */
+  async fetchDomainTraffic(
+    domains: string[],
+    nicheId?: string,
+  ): Promise<Map<string, { etv: number; count: number }>> {
+    const unique = [
+      ...new Set(
+        domains.map((d) => d.trim().toLowerCase()).filter(Boolean),
+      ),
+    ].slice(0, 1000);
+    const out = new Map<string, { etv: number; count: number }>();
+    if (unique.length === 0) return out;
+
+    const payload = [
+      {
+        targets: unique,
+        location_code: this.locationCode(),
+        language_code: this.languageCode(),
+        item_types: ["organic"],
+      },
+    ];
+
+    const json = await this.request<{
+      tasks: Array<{
+        result?: Array<{ items?: unknown[] } | null> | null;
+      }>;
+    }>(
+      "/dataforseo_labs/google/bulk_traffic_estimation/live",
+      payload,
+      nicheId,
+    );
+
+    const items = json.tasks?.[0]?.result?.[0]?.items ?? [];
+    for (const raw of items) {
+      const parsed = BulkTrafficEstimationItemSchema.safeParse(raw);
+      if (!parsed.success) continue;
+      const etv = parsed.data.metrics?.organic?.etv;
+      if (etv == null) continue;
+      out.set(parsed.data.target.trim().toLowerCase(), {
+        etv,
+        count: parsed.data.metrics?.organic?.count ?? 0,
+      });
     }
     return out;
   }

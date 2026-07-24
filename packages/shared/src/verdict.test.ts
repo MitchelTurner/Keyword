@@ -3,6 +3,7 @@ import {
   annotateSerpSnapshot,
   buildVerdict,
   classifySerpPageType,
+  combineOrganicSignal,
   estimateTam,
   organicSoftnessScore,
 } from "./verdict";
@@ -36,6 +37,21 @@ describe("organicSoftnessScore", () => {
       { domain: "sap.com", title: "Suite" },
     ]);
     expect(hard.score).toBeLessThan(0.4);
+  });
+});
+
+describe("combineOrganicSignal", () => {
+  it("falls back to heuristic softness when no difficulty score", () => {
+    const softness = { score: 0.7, detail: "Soft SERP" };
+    expect(combineOrganicSignal({ softness })).toEqual(softness);
+  });
+
+  it("blends real Labs difficulty with the heuristic", () => {
+    const softness = { score: 0.7, detail: "Soft SERP" };
+    const easy = combineOrganicSignal({ softness, keywordDifficulty: 10 });
+    const hard = combineOrganicSignal({ softness, keywordDifficulty: 90 });
+    expect(easy.score).toBeGreaterThan(hard.score);
+    expect(easy.detail).toContain("Keyword difficulty 10/100");
   });
 });
 
@@ -107,5 +123,27 @@ describe("buildVerdict", () => {
       { rank: 1, domain: "reddit.com", title: "x" },
     ]);
     expect(annotated[0]?.pageType).toBe("ugc");
+  });
+
+  it("lowers the verdict when real keyword difficulty is high despite a soft SERP", () => {
+    const base = {
+      totalVolume: 12_000,
+      avgCpc: 0.6,
+      avgCompetition: 0.35,
+      monthlyPriceFloor: 25,
+      demandScore: 4.5,
+      painSeverity: 4,
+      trendDirection: "rising" as const,
+      rubricPass: true,
+      rubricScore: 1,
+      serp: [
+        { domain: "reddit.com", title: "tools?" },
+        { domain: "g2.com", title: "list" },
+        { domain: "medium.com", title: "guide" },
+      ],
+    };
+    const soft = buildVerdict({ ...base, keywordDifficulty: 5 });
+    const hard = buildVerdict({ ...base, keywordDifficulty: 95 });
+    expect(soft.score).toBeGreaterThan(hard.score);
   });
 });

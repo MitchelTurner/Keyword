@@ -943,6 +943,7 @@ function OpportunityDrawer({
   const [notes, setNotes] = useState(detail.notes);
   const [saving, setSaving] = useState(false);
   const [promoting, setPromoting] = useState(false);
+  const [generatingStrategy, setGeneratingStrategy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [promoteLinks, setPromoteLinks] = useState<{
     site: string;
@@ -990,6 +991,23 @@ function OpportunityDrawer({
       setSaveError(String(err));
     } finally {
       setPromoting(false);
+    }
+  }
+
+  async function onGenerateStrategy() {
+    setGeneratingStrategy(true);
+    setSaveError(null);
+    try {
+      const result = await api.generateStrategy(nicheId, detail.id);
+      onUpdated({
+        ...detail,
+        strategyBrief: result.strategyBrief,
+        strategyGeneratedAt: result.strategyGeneratedAt,
+      });
+    } catch (err) {
+      setSaveError(String(err));
+    } finally {
+      setGeneratingStrategy(false);
     }
   }
 
@@ -1149,13 +1167,18 @@ function OpportunityDrawer({
               </p>
             </div>
 
-            {(detail.serp?.length || verdict.organicSoftness != null) && (
+            {(detail.serp?.length ||
+              verdict.organicSoftness != null ||
+              detail.keywordDifficulty != null) && (
               <div>
                 <p className="text-[11px] uppercase tracking-wide text-zinc-500">
                   Organic SERP
                   {detail.serpQuery ? ` · “${detail.serpQuery}”` : ""}
                   {verdict.organicSoftness != null
                     ? ` · softness ${(verdict.organicSoftness * 100).toFixed(0)}%`
+                    : ""}
+                  {detail.keywordDifficulty != null
+                    ? ` · difficulty ${detail.keywordDifficulty.toFixed(0)}/100`
                     : ""}
                 </p>
                 {detail.serp && detail.serp.length > 0 ? (
@@ -1174,6 +1197,11 @@ function OpportunityDrawer({
                         {item.pageType && (
                           <span className="rounded bg-zinc-800/80 px-1 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
                             {item.pageType}
+                          </span>
+                        )}
+                        {item.organicEtv != null && (
+                          <span className="text-[11px] tabular-nums text-zinc-500">
+                            ~{num(Math.round(item.organicEtv))}/mo traffic
                           </span>
                         )}
                         <span className="w-full text-xs text-zinc-500 sm:w-auto">
@@ -1283,6 +1311,129 @@ function OpportunityDrawer({
                 ))}
               </ul>
             </div>
+          </section>
+
+          <section className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-medium text-zinc-200">
+                Strategy
+                {detail.strategyGeneratedAt && (
+                  <span className="ml-2 text-[11px] font-normal text-zinc-500">
+                    generated{" "}
+                    {new Date(detail.strategyGeneratedAt).toLocaleString()}
+                  </span>
+                )}
+              </h3>
+              <button
+                type="button"
+                disabled={generatingStrategy}
+                onClick={() => void onGenerateStrategy()}
+                className="rounded-md border border-emerald-700 bg-emerald-950/40 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:border-emerald-500 disabled:opacity-40"
+              >
+                {generatingStrategy
+                  ? "Thinking…"
+                  : detail.strategyBrief
+                    ? "Regenerate strategy"
+                    : "Generate strategy"}
+              </button>
+            </div>
+
+            {!detail.strategyBrief && !generatingStrategy && (
+              <p className="text-sm text-zinc-500">
+                Synthesizes demand, verdict factors, TAM, SERP incumbents, and
+                keyword difficulty into a concrete entry plan, channel mix,
+                90-day roadmap, pricing, and kill criteria.
+              </p>
+            )}
+
+            {detail.strategyBrief && (
+              <div className="space-y-3 text-sm">
+                <p className="rounded-md border border-zinc-800 bg-zinc-950/40 px-2.5 py-2 text-zinc-200">
+                  {detail.strategyBrief.entryStrategy}
+                </p>
+
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                    Channel mix
+                  </p>
+                  <ul className="mt-1.5 space-y-1">
+                    {detail.strategyBrief.channels.map((c) => (
+                      <li
+                        key={c.channel}
+                        className="flex flex-wrap items-baseline gap-x-2 rounded px-1.5 py-1 hover:bg-zinc-900/80"
+                      >
+                        <span
+                          className={`text-[11px] font-medium uppercase ${
+                            c.priority === "primary"
+                              ? "text-emerald-400"
+                              : "text-zinc-500"
+                          }`}
+                        >
+                          {c.priority}
+                        </span>
+                        <span className="text-zinc-200">{c.channel}</span>
+                        <span className="text-xs text-zinc-500">
+                          {c.rationale}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                    Roadmap
+                  </p>
+                  <div className="mt-1.5 space-y-2">
+                    {detail.strategyBrief.roadmap.map((r) => (
+                      <div
+                        key={r.horizon}
+                        className="rounded-md border border-zinc-800 bg-zinc-950/30 px-2.5 py-2"
+                      >
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-300/90">
+                          {r.horizon}
+                        </p>
+                        <ul className="mt-1 space-y-0.5 text-xs text-zinc-300">
+                          {r.actions.map((a) => (
+                            <li key={a} className="flex gap-2">
+                              <span className="text-zinc-600">·</span>
+                              <span>{a}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                    Pricing strategy
+                  </p>
+                  <p className="mt-1 text-zinc-300">
+                    {detail.strategyBrief.pricingStrategy}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                    Risks
+                  </p>
+                  <ul className="mt-1.5 space-y-0.5 text-xs text-zinc-400">
+                    {detail.strategyBrief.risks.map((r) => (
+                      <li key={r} className="flex gap-2">
+                        <span className="text-rose-500">·</span>
+                        <span>{r}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <p className="rounded-md border border-rose-900/50 bg-rose-950/20 px-2.5 py-1.5 text-xs text-rose-300/90">
+                  Kill if: {detail.strategyBrief.killCriteria}
+                </p>
+              </div>
+            )}
           </section>
 
           <p className="text-sm leading-relaxed text-zinc-400">

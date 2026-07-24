@@ -8,6 +8,8 @@ export type SerpSnapshotItem = {
   title: string;
   /** Inferred page type for organic softness. */
   pageType?: SerpPageType;
+  /** Estimated monthly organic traffic (etv) for this domain, from Labs bulk traffic estimation. */
+  organicEtv?: number | null;
 };
 
 export type SerpPageType =
@@ -119,6 +121,25 @@ export function organicSoftnessScore(
   return { score: round3(score), detail };
 }
 
+/**
+ * Blend a real Labs keyword-difficulty score (0..100, authoritative) with the
+ * page-type softness heuristic. Falls back to the heuristic alone when no
+ * difficulty score is available.
+ */
+export function combineOrganicSignal(input: {
+  softness: { score: number; detail: string };
+  keywordDifficulty?: number | null;
+}): { score: number; detail: string } {
+  if (input.keywordDifficulty == null || Number.isNaN(input.keywordDifficulty)) {
+    return input.softness;
+  }
+  const kd = Math.min(100, Math.max(0, input.keywordDifficulty));
+  const difficultyNorm = 1 - kd / 100;
+  const score = round3(difficultyNorm * 0.6 + input.softness.score * 0.4);
+  const detail = `Keyword difficulty ${kd.toFixed(0)}/100 (Labs) · ${input.softness.detail}`;
+  return { score, detail };
+}
+
 export function estimateTam(input: {
   totalVolume: number;
   avgCpc: number;
@@ -173,6 +194,8 @@ export function buildVerdict(input: {
   monetizationModel?: string | null;
   serp?: Array<{ domain: string; title: string }> | null;
   organicSoftness?: number | null;
+  /** Real Labs bulk-keyword-difficulty score (0..100) for the theme's top keyword. */
+  keywordDifficulty?: number | null;
 }): VerdictResult {
   const tam = estimateTam({
     totalVolume: input.totalVolume,
@@ -181,7 +204,7 @@ export function buildVerdict(input: {
     monetizationModel: input.monetizationModel,
   });
 
-  const softness =
+  const rawSoftness =
     input.organicSoftness != null
       ? {
           score: Math.min(1, Math.max(0, input.organicSoftness)),
@@ -193,6 +216,10 @@ export function buildVerdict(input: {
                 : "Stored organic softness is mixed",
         }
       : organicSoftnessScore(input.serp ?? []);
+  const softness = combineOrganicSignal({
+    softness: rawSoftness,
+    keywordDifficulty: input.keywordDifficulty,
+  });
 
   // Normalize demand: log-scale typical scores after scoring rewrite (~1..8).
   const demandNorm = Math.min(1, Math.max(0, input.demandScore / 6));

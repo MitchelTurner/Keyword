@@ -183,6 +183,37 @@ export const ClaudeThemeBuildBriefSchema = z.object({
 });
 export type ClaudeThemeBuildBrief = z.infer<typeof ClaudeThemeBuildBriefSchema>;
 
+/**
+ * AI-synthesized go-to-market strategy grounded in a theme's demand,
+ * verdict factors, TAM, SERP incumbents, and keyword difficulty.
+ */
+export const ClaudeStrategyBriefSchema = z.object({
+  entry_strategy: z.string().trim().min(1).max(400),
+  channels: z
+    .array(
+      z.object({
+        channel: z.string().trim().min(1).max(80),
+        rationale: z.string().trim().min(1).max(280),
+        priority: z.enum(["primary", "secondary"]),
+      }),
+    )
+    .min(1)
+    .max(6),
+  roadmap: z
+    .array(
+      z.object({
+        horizon: z.enum(["0-30d", "30-90d", "90d+"]),
+        actions: z.array(z.string().trim().min(1).max(240)).min(1).max(6),
+      }),
+    )
+    .min(1)
+    .max(3),
+  pricing_strategy: z.string().trim().min(1).max(400),
+  risks: z.array(z.string().trim().min(1).max(240)).min(1).max(6),
+  kill_criteria: z.string().trim().min(1).max(300),
+});
+export type ClaudeStrategyBrief = z.infer<typeof ClaudeStrategyBriefSchema>;
+
 /** Permanently hide a recommended seed from the suggestions panel. */
 export const RejectSeedSchema = z.object({
   term: z.string().trim().min(1).max(120),
@@ -328,6 +359,41 @@ export const SearchVolumeItemSchema = z
   .passthrough();
 
 export type SearchVolumeItem = z.infer<typeof SearchVolumeItemSchema>;
+
+/** dataforseo_labs/google/bulk_keyword_difficulty/live row. */
+export const BulkKeywordDifficultyItemSchema = z
+  .object({
+    keyword: z.string(),
+    keyword_difficulty: z.number().nullable().optional(),
+  })
+  .passthrough();
+export type BulkKeywordDifficultyItem = z.infer<
+  typeof BulkKeywordDifficultyItemSchema
+>;
+
+/** dataforseo_labs/google/bulk_traffic_estimation/live row. */
+export const BulkTrafficEstimationItemSchema = z
+  .object({
+    target: z.string(),
+    metrics: z
+      .object({
+        organic: z
+          .object({
+            etv: z.number().nullable().optional(),
+            count: z.number().nullable().optional(),
+          })
+          .passthrough()
+          .nullable()
+          .optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+export type BulkTrafficEstimationItem = z.infer<
+  typeof BulkTrafficEstimationItemSchema
+>;
 
 /**
  * Coarse LOW/MEDIUM/HIGH floats Labs (and label fallbacks) use.

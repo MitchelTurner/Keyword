@@ -79,6 +79,7 @@ export function attachDecisionSupport<
     monetizationModel?: string | null;
     serpSnapshot?: Prisma.JsonValue | null;
     organicSoftness?: number | null;
+    keywordDifficulty?: number | null;
   },
 >(
   opportunities: T[],
@@ -148,6 +149,7 @@ export function attachDecisionSupport<
       monetizationModel: o.monetizationModel,
       serp,
       organicSoftness: o.organicSoftness,
+      keywordDifficulty: o.keywordDifficulty,
     });
 
     return {

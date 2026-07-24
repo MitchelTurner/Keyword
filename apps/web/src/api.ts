@@ -73,6 +73,27 @@ export type OpportunitySerpItem = {
   domain: string;
   title: string;
   pageType?: SerpPageType;
+  organicEtv?: number | null;
+};
+
+export type StrategyChannel = {
+  channel: string;
+  rationale: string;
+  priority: "primary" | "secondary";
+};
+
+export type StrategyRoadmapItem = {
+  horizon: "0-30d" | "30-90d" | "90d+";
+  actions: string[];
+};
+
+export type StrategyBrief = {
+  entryStrategy: string;
+  channels: StrategyChannel[];
+  roadmap: StrategyRoadmapItem[];
+  pricingStrategy: string;
+  risks: string[];
+  killCriteria: string;
 };
 
 export type VerdictSupport = {
@@ -144,6 +165,9 @@ export type OpportunityRow = {
   serpQuery?: string | null;
   serpFetchedAt?: string | null;
   organicSoftness?: number | null;
+  keywordDifficulty?: number | null;
+  strategyBrief?: StrategyBrief | null;
+  strategyGeneratedAt?: string | null;
   pinned: boolean;
   notes: string;
   reviewStatus: string;
@@ -525,6 +549,13 @@ export const api = {
     }>(`/niches/${nicheId}/opportunities/${oppId}/promote`, {
       method: "POST",
       body: JSON.stringify(body ?? {}),
+    }),
+  generateStrategy: (nicheId: string, oppId: string) =>
+    request<{
+      strategyBrief: StrategyBrief;
+      strategyGeneratedAt: string;
+    }>(`/niches/${nicheId}/opportunities/${oppId}/strategy`, {
+      method: "POST",
     }),
   updateOpportunity: (
     nicheId: string,

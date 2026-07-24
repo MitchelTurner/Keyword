@@ -167,6 +167,9 @@ export class NichesService {
       serpQuery?: string | null;
       serpFetchedAt?: Date | null;
       organicSoftness?: number | null;
+      keywordDifficulty?: number | null;
+      strategyBrief?: Prisma.JsonValue | null;
+      strategyGeneratedAt?: Date | null;
       pinned: boolean;
       notes: string;
       reviewStatus: string;
@@ -206,6 +209,9 @@ export class NichesService {
       serpQuery: o.serpQuery ?? null,
       serpFetchedAt: o.serpFetchedAt ?? null,
       organicSoftness: o.organicSoftness ?? null,
+      keywordDifficulty: o.keywordDifficulty ?? null,
+      strategyBrief: o.strategyBrief ?? null,
+      strategyGeneratedAt: o.strategyGeneratedAt ?? null,
       pinned: o.pinned,
       notes: o.notes,
       reviewStatus: o.reviewStatus,
@@ -519,6 +525,84 @@ export class NichesService {
         site: `/sites/${site.id}`,
         domains: `/domains?topic=${topic}`,
       },
+    };
+  }
+
+  /**
+   * Turn every data point we obtained for this opportunity — demand,
+   * verdict factors, TAM, SERP incumbents (traffic + page type), and Labs
+   * keyword difficulty — into a concrete, actionable strategy via Claude.
+   */
+  async generateStrategy(nicheId: string, oppId: string) {
+    const niche = await this.prisma.niche.findUnique({ where: { id: nicheId } });
+    if (!niche) throw new NotFoundException("Niche not found");
+
+    const opportunity = await this.prisma.opportunity.findFirst({
+      where: { id: oppId, nicheId },
+      include: {
+        keywords: { select: { monthlyTrend: true } },
+      },
+    });
+    if (!opportunity) throw new NotFoundException("Opportunity not found");
+
+    const rubricConfig = parseRubricConfig(niche.rubricConfig);
+    const mapped = this.mapOpportunity(
+      { ...opportunity, keywordCount: opportunity.keywords.length },
+      this.trendFromKeywords(opportunity.keywords),
+    );
+    const [decided] = attachDecisionSupport([mapped], { rubricConfig });
+    if (!decided) throw new NotFoundException("Opportunity not found");
+
+    const brief = await this.claude.generateStrategyBrief(
+      {
+        productDescription: opportunity.productDescription,
+        buyerType: opportunity.buyerType,
+        intent: opportunity.intent,
+        totalVolume: opportunity.totalVolume,
+        avgCpc: opportunity.avgCpc,
+        avgCompetition: opportunity.avgCompetition,
+        monthlyPriceFloor: opportunity.monthlyPriceFloor,
+        monetizationModel: opportunity.monetizationModel,
+        wedge: opportunity.wedge,
+        verdict: decided.decision.verdict.verdict,
+        verdictScore: decided.decision.verdict.score,
+        verdictRationale: decided.decision.verdict.rationale,
+        factors: decided.decision.verdict.factors,
+        tamSummary: decided.decision.verdict.tam.summary,
+        trendDirection: decided.trend.direction,
+        keywordDifficulty: opportunity.keywordDifficulty,
+        serp: decided.serp,
+      },
+      nicheId,
+    );
+
+    const strategyBrief = {
+      entryStrategy: brief.entry_strategy,
+      channels: brief.channels.map((c) => ({
+        channel: c.channel,
+        rationale: c.rationale,
+        priority: c.priority,
+      })),
+      roadmap: brief.roadmap.map((r) => ({
+        horizon: r.horizon,
+        actions: r.actions,
+      })),
+      pricingStrategy: brief.pricing_strategy,
+      risks: brief.risks,
+      killCriteria: brief.kill_criteria,
+    };
+
+    const updated = await this.prisma.opportunity.update({
+      where: { id: opportunity.id },
+      data: {
+        strategyBrief,
+        strategyGeneratedAt: new Date(),
+      },
+    });
+
+    return {
+      strategyBrief,
+      strategyGeneratedAt: updated.strategyGeneratedAt,
     };
   }
 

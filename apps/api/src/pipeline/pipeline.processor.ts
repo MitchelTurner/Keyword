@@ -635,7 +635,12 @@ export class PipelineProcessor {
     });
   }
 
-  /** Fetch organic SERP for each theme's top keyword (cost-capped). */
+  /**
+   * Fetch organic SERP for each theme's top keyword (cost-capped), then
+   * layer on two Labs data points obtainable for the whole batch at once:
+   * real keyword-difficulty scores and estimated organic traffic for the
+   * SERP incumbents — turning a page-type guess into a quantified signal.
+   */
   private async enrichOpportunitySerp(nicheId: string) {
     const opportunities = await this.prisma.opportunity.findMany({
       where: { nicheId },
@@ -651,28 +656,86 @@ export class PipelineProcessor {
       },
     });
 
-    for (const opp of opportunities) {
-      const term = opp.keywords[0]?.term?.trim();
-      if (!term) continue;
+    const withTerm = opportunities
+      .map((o) => ({ id: o.id, term: o.keywords[0]?.term?.trim() ?? "" }))
+      .filter((o) => o.term.length > 0);
+    if (withTerm.length === 0) return;
+
+    const serpByOpp = new Map<
+      string,
+      Array<{ rank: number; domain: string; title: string }>
+    >();
+    for (const { id, term } of withTerm) {
       try {
         const raw = await this.dataForSeo.fetchOrganicSerpPreview(term, {
           depth: 5,
         });
-        const serp = annotateSerpSnapshot(raw);
-        const soft = organicSoftnessScore(serp);
+        serpByOpp.set(id, raw);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `SERP preview failed for opportunity ${id} (${term}): ${message}`,
+        );
+      }
+    }
+
+    let difficultyByTerm = new Map<string, number>();
+    try {
+      difficultyByTerm = await this.dataForSeo.fetchKeywordDifficulty(
+        withTerm.map((o) => o.term),
+        nicheId,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Keyword difficulty fetch failed for niche ${nicheId}: ${message}`,
+      );
+    }
+
+    const domainSet = new Set<string>();
+    for (const serp of serpByOpp.values()) {
+      for (const item of serp.slice(0, 3)) domainSet.add(item.domain);
+    }
+    let trafficByDomain = new Map<string, { etv: number; count: number }>();
+    if (domainSet.size > 0) {
+      try {
+        trafficByDomain = await this.dataForSeo.fetchDomainTraffic(
+          [...domainSet],
+          nicheId,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `Domain traffic fetch failed for niche ${nicheId}: ${message}`,
+        );
+      }
+    }
+
+    for (const { id, term } of withTerm) {
+      const raw = serpByOpp.get(id);
+      if (!raw) continue;
+      const annotated = annotateSerpSnapshot(raw).map((item) => ({
+        ...item,
+        organicEtv: trafficByDomain.get(item.domain.toLowerCase())?.etv ?? null,
+      }));
+      // Store the raw page-type heuristic here; buildVerdict blends it with
+      // keywordDifficulty at read time so we never double-count the signal.
+      const heuristic = organicSoftnessScore(annotated);
+      try {
         await this.prisma.opportunity.update({
-          where: { id: opp.id },
+          where: { id },
           data: {
-            serpSnapshot: serp,
+            serpSnapshot: annotated,
             serpQuery: term,
             serpFetchedAt: new Date(),
-            organicSoftness: soft.score,
+            organicSoftness: heuristic.score,
+            keywordDifficulty: difficultyByTerm.get(term.toLowerCase()) ?? null,
           },
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.logger.warn(
-          `SERP preview failed for opportunity ${opp.id} (${term}): ${message}`,
+          `Opportunity SERP save failed for ${id} (${term}): ${message}`,
         );
       }
     }

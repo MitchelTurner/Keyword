@@ -7,11 +7,13 @@ import {
   ClaudeKeywordExpandSchema,
   ClaudeMergeSchema,
   ClaudeSeedMonetizationReviewSchema,
+  ClaudeStrategyBriefSchema,
   ClaudeThemeBuildBriefSchema,
   type ClaudeClassification,
   type ClaudeDomainIdeas,
   type ClaudeMerge,
   type ClaudeSeedMonetizationReview,
+  type ClaudeStrategyBrief,
   type ClaudeThemeBuildBrief,
 } from "@prospector/shared";
 import { CostService } from "../cost/cost.service";
@@ -158,6 +160,24 @@ Rules:
 - Include every input theme exactly once (match product_description)
 - Stay realistic for a solo founder — no enterprise sales teams required on day one
 - Prefer digital products over licensed/in-person services
+- No markdown, no prose outside the JSON`;
+
+const STRATEGY_SYSTEM = `You are a hands-on strategic advisor for a solo founder deciding whether and how to build a management-SaaS product around a keyword research theme.
+
+You will receive real research data: demand/competition metrics, a Build/Watch/Kill verdict with factor scores, a TAM estimate, an organic SERP snapshot (competitor domains, inferred page types, estimated monthly organic traffic), a Labs keyword-difficulty score, trend direction, and monetization model.
+
+Turn this into a concrete, non-generic execution plan for making money. Reference the ACTUAL competitor domains, traffic figures, difficulty score, and TAM numbers given — never give generic startup advice that could apply to any niche.
+
+Respond ONLY with JSON matching:
+{"entry_strategy":string,"channels":[{"channel":string,"rationale":string,"priority":"primary"|"secondary"}],"roadmap":[{"horizon":"0-30d"|"30-90d"|"90d+","actions":[string,...]}],"pricing_strategy":string,"risks":[string,...],"kill_criteria":string}
+
+Rules:
+- entry_strategy: 1-2 sentences naming the specific wedge and first customer segment
+- channels: 2-4 concrete acquisition channels (e.g. SEO angle against the named competitors, paid validation, communities, partnerships), ranked with priority
+- roadmap: exactly 3 horizons (0-30d, 30-90d, 90d+), each with 2-4 concrete actions that cite the data (e.g. "target the UGC threads ranking for X" or "underprice the $Y/mo incumbent on <domain>")
+- pricing_strategy: a specific price/packaging suggestion grounded in the monthly price floor and buyer type
+- risks: 2-4 specific risks drawn from the data (hard SERP, thin TAM, declining trend, high keyword difficulty, etc.)
+- kill_criteria: one measurable early signal that means abandon this theme
 - No markdown, no prose outside the JSON`;
 
 @Injectable()
@@ -554,6 +574,102 @@ export class ClaudeService {
         allowed.has(t.product_description.trim().toLowerCase()),
       ),
     };
+  }
+
+  /**
+   * Synthesize a concrete go-to-market strategy from every data point we
+   * were able to obtain for a theme: demand, verdict factors, TAM, SERP
+   * incumbents (with traffic + page type), and Labs keyword difficulty.
+   */
+  async generateStrategyBrief(
+    input: {
+      productDescription: string;
+      buyerType: string;
+      intent: string;
+      totalVolume: number;
+      avgCpc: number;
+      avgCompetition: number;
+      monthlyPriceFloor: number;
+      monetizationModel?: string | null;
+      wedge?: string | null;
+      verdict: string;
+      verdictScore: number;
+      verdictRationale: string;
+      factors: Array<{ label: string; score: number; detail: string }>;
+      tamSummary: string;
+      trendDirection: string;
+      keywordDifficulty?: number | null;
+      serp?: Array<{
+        rank: number;
+        domain: string;
+        title: string;
+        pageType?: string | null;
+        organicEtv?: number | null;
+      }> | null;
+    },
+    nicheId?: string,
+  ): Promise<ClaudeStrategyBrief> {
+    const payload = {
+      theme: input.productDescription,
+      buyer_type: input.buyerType,
+      intent: input.intent,
+      total_volume: input.totalVolume,
+      avg_cpc: input.avgCpc,
+      avg_competition: input.avgCompetition,
+      monthly_price_floor: input.monthlyPriceFloor,
+      monetization_model: input.monetizationModel ?? null,
+      wedge: input.wedge ?? null,
+      verdict: input.verdict,
+      verdict_score: input.verdictScore,
+      verdict_rationale: input.verdictRationale,
+      factors: input.factors,
+      tam_summary: input.tamSummary,
+      trend: input.trendDirection,
+      keyword_difficulty: input.keywordDifficulty ?? null,
+      serp: (input.serp ?? []).slice(0, 10).map((s) => ({
+        rank: s.rank,
+        domain: s.domain,
+        title: s.title,
+        page_type: s.pageType ?? null,
+        monthly_organic_traffic: s.organicEtv ?? null,
+      })),
+    };
+
+    const user = `Build a strategy brief from this research:\n${JSON.stringify(payload)}`;
+
+    const tryParse = (raw: string) => {
+      try {
+        return ClaudeStrategyBriefSchema.safeParse(JSON.parse(raw));
+      } catch (err) {
+        return {
+          success: false as const,
+          error: {
+            message:
+              err instanceof Error ? err.message : "JSON parse failed",
+          },
+        };
+      }
+    };
+
+    let text = await this.complete(STRATEGY_SYSTEM, user, nicheId);
+    let parsed = tryParse(text);
+
+    if (!parsed.success) {
+      this.logger.warn(`Claude strategy brief parse failed, retrying once`);
+      text = await this.complete(
+        STRATEGY_SYSTEM,
+        `${user}\n\nPrevious response failed validation: ${parsed.error.message}. Return corrected JSON only.`,
+        nicheId,
+      );
+      parsed = tryParse(text);
+      if (!parsed.success) {
+        throw new Error(
+          `Claude strategy brief JSON invalid: ${parsed.error.message}`,
+        );
+      }
+    }
+
+    return parsed.data;
   }
 
   async mergeClusterLabels(

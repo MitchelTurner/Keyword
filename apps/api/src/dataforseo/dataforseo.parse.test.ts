@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  BulkKeywordDifficultyItemSchema,
+  BulkTrafficEstimationItemSchema,
   SearchVolumeItemSchema,
   KeywordIdeaItemSchema,
   normalizeCompetition,
@@ -63,6 +65,35 @@ describe("DataForSEO response parsing", () => {
   it("rejects tasks that are not success codes at fixture level", () => {
     expect(keywordIdeasFixture.tasks[0].status_code).toBe(20000);
     expect(searchVolumeFixture.tasks[0].status_code).toBe(20000);
+  });
+});
+
+describe("bulk keyword difficulty / traffic estimation parsing", () => {
+  it("parses keyword difficulty rows", () => {
+    const parsed = BulkKeywordDifficultyItemSchema.parse({
+      keyword: "invoice software",
+      keyword_difficulty: 62,
+    });
+    expect(parsed.keyword_difficulty).toBe(62);
+  });
+
+  it("parses bulk traffic estimation rows with nested organic metrics", () => {
+    const parsed = BulkTrafficEstimationItemSchema.parse({
+      target: "hubspot.com",
+      metrics: {
+        organic: { etv: 217332878.18, count: 11786473 },
+        paid: { etv: 0, count: 0 },
+      },
+    });
+    expect(parsed.metrics?.organic?.etv).toBeCloseTo(217332878.18);
+  });
+
+  it("tolerates missing organic metrics", () => {
+    const parsed = BulkTrafficEstimationItemSchema.parse({
+      target: "tiny-blog.example",
+      metrics: { organic: null },
+    });
+    expect(parsed.metrics?.organic).toBeNull();
   });
 });
 

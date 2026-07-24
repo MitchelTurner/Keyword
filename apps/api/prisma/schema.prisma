@@ -81,6 +81,11 @@ model Opportunity {
   serpFetchedAt      DateTime?
   /// 0..1 organic softness derived from serpSnapshot (higher = easier).
   organicSoftness    Float?
+  /// Labs bulk_keyword_difficulty score (0..100) for serpQuery.
+  keywordDifficulty  Float?
+  /// AI-synthesized go-to-market strategy (entry, channels, roadmap, pricing, risks).
+  strategyBrief      Json?
+  strategyGeneratedAt DateTime?
   pinned             Boolean   @default(false)
   notes              String    @default("")
   reviewStatus       String    @default("none") // none | watching | building | passed

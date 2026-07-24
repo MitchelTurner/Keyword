@@ -88,6 +88,14 @@ export class NichesController {
     return this.niches.promoteOpportunity(id, oppId, body);
   }
 
+  @Post(":id/opportunities/:oppId/strategy")
+  generateStrategy(
+    @Param("id") id: string,
+    @Param("oppId") oppId: string,
+  ) {
+    return this.niches.generateStrategy(id, oppId);
+  }
+
   @Patch(":id")
   update(
     @Param("id") id: string,

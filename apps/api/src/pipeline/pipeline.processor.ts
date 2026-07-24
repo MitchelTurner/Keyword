@@ -2,14 +2,21 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Job } from "bullmq";
 import { Prisma } from "@prisma/client";
 import {
+  DEFAULT_RUBRIC,
   MIN_KEYWORD_VOLUME,
   annotateSerpSnapshot,
+  analyzeOpportunityTrend,
+  buildVerdict,
+  captureDecisionSnapshot,
+  evaluateRubric,
   organicSoftnessScore,
   scoreOpportunity,
+  type TrendPoint,
 } from "@prospector/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { DataForSeoService } from "../dataforseo/dataforseo.service";
 import { ClaudeService } from "../claude/claude.service";
+import { parseRubricConfig, parseSerpSnapshot } from "../niches/decision";
 import type { PipelineJobData, PipelineJobName } from "./pipeline.constants";
 
 type WorkingCluster = {
@@ -629,6 +636,17 @@ export class PipelineProcessor {
       );
     }
 
+    // Persist decision snapshots (for diff-vs-last-run) and auto-generate
+    // strategy briefs for Build verdicts.
+    try {
+      await this.persistSnapshotsAndAutoStrategy(nicheId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Snapshot/strategy pass failed for ${nicheId}: ${message}`,
+      );
+    }
+
     await this.prisma.niche.update({
       where: { id: nicheId },
       data: { status: "DONE", error: null },
@@ -793,6 +811,187 @@ export class PipelineProcessor {
           wedge: t.wedge,
         },
       });
+    }
+  }
+
+  /**
+   * After scoring + SERP + build briefs: write decision snapshots (enabling
+   * diff-vs-last-run) and auto-generate Claude strategy briefs for Build
+   * verdicts that don't already have one.
+   */
+  private async persistSnapshotsAndAutoStrategy(nicheId: string) {
+    const niche = await this.prisma.niche.findUniqueOrThrow({
+      where: { id: nicheId },
+    });
+    const rubric = parseRubricConfig(niche.rubricConfig) ?? DEFAULT_RUBRIC;
+
+    const opportunities = await this.prisma.opportunity.findMany({
+      where: { nicheId },
+      orderBy: { demandScore: "desc" },
+      include: {
+        keywords: {
+          select: { monthlyTrend: true },
+          take: 40,
+        },
+      },
+    });
+
+    type BuildCandidate = {
+      id: string;
+      productDescription: string;
+      buyerType: string;
+      intent: string;
+      totalVolume: number;
+      avgCpc: number;
+      avgCompetition: number;
+      monthlyPriceFloor: number;
+      monetizationModel: string | null;
+      wedge: string | null;
+      keywordDifficulty: number | null;
+      strategyBrief: Prisma.JsonValue | null;
+      verdictLabel: string;
+      verdictScore: number;
+      verdictRationale: string;
+      factors: Array<{ label: string; score: number; detail: string }>;
+      tamSummary: string;
+      trendDirection: string;
+      serp: ReturnType<typeof parseSerpSnapshot>;
+    };
+    const buildCandidates: BuildCandidate[] = [];
+
+    for (const opp of opportunities) {
+      const trend = analyzeOpportunityTrend(
+        opp.keywords.map((k) => {
+          const raw = k.monthlyTrend;
+          if (!raw || !Array.isArray(raw)) return null;
+          return raw as unknown as TrendPoint[];
+        }),
+      );
+      const serp = parseSerpSnapshot(opp.serpSnapshot);
+      const rubricResult = evaluateRubric(
+        {
+          monthlyPriceFloor: opp.monthlyPriceFloor,
+          totalVolume: opp.totalVolume,
+          painSeverity: opp.painSeverity,
+          avgCompetition: opp.avgCompetition,
+          trendDirection: trend.direction,
+        },
+        rubric,
+      );
+      const verdict = buildVerdict({
+        totalVolume: opp.totalVolume,
+        avgCpc: opp.avgCpc,
+        avgCompetition: opp.avgCompetition,
+        monthlyPriceFloor: opp.monthlyPriceFloor,
+        demandScore: opp.demandScore,
+        painSeverity: opp.painSeverity,
+        trendDirection: trend.direction,
+        rubricPass: rubricResult.pass,
+        rubricScore: rubricResult.score,
+        monetizationModel: opp.monetizationModel,
+        intent: opp.intent,
+        serp,
+        organicSoftness: opp.organicSoftness,
+        keywordDifficulty: opp.keywordDifficulty,
+      });
+
+      const snapshot = captureDecisionSnapshot({
+        verdict: verdict.verdict,
+        score: verdict.score,
+        demandScore: opp.demandScore,
+        totalVolume: opp.totalVolume,
+        avgCompetition: opp.avgCompetition,
+        organicSoftness: verdict.organicSoftness,
+        keywordDifficulty: opp.keywordDifficulty,
+        priorityScore: verdict.priorityScore,
+      });
+
+      await this.prisma.opportunity.update({
+        where: { id: opp.id },
+        data: {
+          previousSnapshot: opp.decisionSnapshot ?? Prisma.JsonNull,
+          decisionSnapshot: snapshot,
+        },
+      });
+
+      if (verdict.verdict === "build" && !opp.strategyBrief) {
+        buildCandidates.push({
+          id: opp.id,
+          productDescription: opp.productDescription,
+          buyerType: opp.buyerType,
+          intent: opp.intent,
+          totalVolume: opp.totalVolume,
+          avgCpc: opp.avgCpc,
+          avgCompetition: opp.avgCompetition,
+          monthlyPriceFloor: opp.monthlyPriceFloor,
+          monetizationModel: opp.monetizationModel,
+          wedge: opp.wedge,
+          keywordDifficulty: opp.keywordDifficulty,
+          strategyBrief: opp.strategyBrief,
+          verdictLabel: verdict.verdict,
+          verdictScore: verdict.score,
+          verdictRationale: verdict.rationale,
+          factors: verdict.factors,
+          tamSummary: verdict.tam.summary,
+          trendDirection: trend.direction,
+          serp,
+        });
+      }
+    }
+
+    // Cap auto-strategy spend: top 5 Builds by demand only.
+    for (const cand of buildCandidates.slice(0, 5)) {
+      try {
+        const brief = await this.claude.generateStrategyBrief(
+          {
+            productDescription: cand.productDescription,
+            buyerType: cand.buyerType,
+            intent: cand.intent,
+            totalVolume: cand.totalVolume,
+            avgCpc: cand.avgCpc,
+            avgCompetition: cand.avgCompetition,
+            monthlyPriceFloor: cand.monthlyPriceFloor,
+            monetizationModel: cand.monetizationModel,
+            wedge: cand.wedge,
+            verdict: cand.verdictLabel,
+            verdictScore: cand.verdictScore,
+            verdictRationale: cand.verdictRationale,
+            factors: cand.factors,
+            tamSummary: cand.tamSummary,
+            trendDirection: cand.trendDirection,
+            keywordDifficulty: cand.keywordDifficulty,
+            serp: cand.serp,
+          },
+          nicheId,
+        );
+        const strategyBrief = {
+          entryStrategy: brief.entry_strategy,
+          channels: brief.channels.map((c) => ({
+            channel: c.channel,
+            rationale: c.rationale,
+            priority: c.priority,
+          })),
+          roadmap: brief.roadmap.map((r) => ({
+            horizon: r.horizon,
+            actions: r.actions,
+          })),
+          pricingStrategy: brief.pricing_strategy,
+          risks: brief.risks,
+          killCriteria: brief.kill_criteria,
+        };
+        await this.prisma.opportunity.update({
+          where: { id: cand.id },
+          data: {
+            strategyBrief,
+            strategyGeneratedAt: new Date(),
+          },
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `Auto strategy failed for opportunity ${cand.id}: ${message}`,
+        );
+      }
     }
   }
 }

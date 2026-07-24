@@ -82,17 +82,31 @@ export const ReviewStatusSchema = z.enum([
 ]);
 export type ReviewStatus = z.infer<typeof ReviewStatusSchema>;
 
+/** Operator-reported outcome used to tune verdict weights over time. */
+export const OpportunityOutcomeSchema = z.enum([
+  "none",
+  "built",
+  "ranked",
+  "abandoned",
+  "revenue_low",
+  "revenue_mid",
+  "revenue_high",
+]);
+export type OpportunityOutcomeDto = z.infer<typeof OpportunityOutcomeSchema>;
+
 export const UpdateOpportunitySchema = z
   .object({
     pinned: z.boolean().optional(),
     notes: z.string().max(5000).optional(),
     reviewStatus: ReviewStatusSchema.optional(),
+    outcome: OpportunityOutcomeSchema.optional(),
   })
   .refine(
     (v) =>
       v.pinned !== undefined ||
       v.notes !== undefined ||
-      v.reviewStatus !== undefined,
+      v.reviewStatus !== undefined ||
+      v.outcome !== undefined,
     { message: "At least one field is required" },
   );
 export type UpdateOpportunityDto = z.infer<typeof UpdateOpportunitySchema>;

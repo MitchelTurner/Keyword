@@ -63,6 +63,21 @@ describe("niche pipeline integration (mocked externals)", () => {
             raw: { keyword, search_volume: 1000 + i * 100 },
           })),
         ),
+        fetchOrganicSerpPreview: vi.fn(async () => [
+          { rank: 1, domain: "reddit.com", title: "Anyone use this?" },
+          { rank: 2, domain: "medium.com", title: "How to guide" },
+          { rank: 3, domain: "g2.com", title: "Best tools" },
+        ]),
+        fetchKeywordDifficulty: vi.fn(async (keywords: string[]) => {
+          const map = new Map<string, number>();
+          for (const k of keywords) map.set(k.toLowerCase(), 28);
+          return map;
+        }),
+        fetchDomainTraffic: vi.fn(async (domains: string[]) => {
+          const map = new Map<string, { etv: number; count: number }>();
+          for (const d of domains) map.set(d.toLowerCase(), { etv: 5000, count: 10 });
+          return map;
+        }),
       })
       .overrideProvider(ClaudeService)
       .useValue({
@@ -120,6 +135,33 @@ describe("niche pipeline integration (mocked externals)", () => {
             approve: true,
             reason: "Buildable software niche",
           })),
+        })),
+        generateStrategyBrief: vi.fn(async () => ({
+          entry_strategy: "Ship a focused SMB wedge first.",
+          channels: [
+            {
+              channel: "SEO long-tail",
+              rationale: "Soft SERP",
+              priority: "primary" as const,
+            },
+          ],
+          roadmap: [
+            {
+              horizon: "0-30d" as const,
+              actions: ["Validate 10 buyers"],
+            },
+            {
+              horizon: "30-90d" as const,
+              actions: ["Ship MVP"],
+            },
+            {
+              horizon: "90d+" as const,
+              actions: ["Expand wedge"],
+            },
+          ],
+          pricing_strategy: "Start at $49/mo",
+          risks: ["Crowded head terms"],
+          kill_criteria: "No paid pilot in 60 days",
         })),
       })
       .compile();

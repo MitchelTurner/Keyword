@@ -14,6 +14,7 @@ import {
   num,
   type NicheDetail,
   type OpportunityDetail,
+  type OpportunityOutcome,
   type OpportunityRow,
   type RubricConfig,
 } from "../api";
@@ -52,6 +53,16 @@ const REVIEW_OPTIONS = [
   { value: "watching", label: "Watching" },
   { value: "building", label: "Building" },
   { value: "passed", label: "Passed" },
+] as const;
+
+const OUTCOME_OPTIONS = [
+  { value: "none", label: "—" },
+  { value: "built", label: "Built" },
+  { value: "ranked", label: "Ranked" },
+  { value: "abandoned", label: "Abandoned" },
+  { value: "revenue_low", label: "Revenue · low" },
+  { value: "revenue_mid", label: "Revenue · mid" },
+  { value: "revenue_high", label: "Revenue · high" },
 ] as const;
 
 const inputClass =
@@ -961,6 +972,7 @@ function OpportunityDrawer({
     pinned?: boolean;
     notes?: string;
     reviewStatus?: string;
+    outcome?: OpportunityOutcome;
   }) {
     setSaving(true);
     setSaveError(null);
@@ -1061,7 +1073,19 @@ function OpportunityDrawer({
 
           <p className="rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-300">
             {verdict.rationale}
+            {decision.priorityRank != null && (
+              <span className="mt-1 block text-xs text-zinc-500">
+                Priority #{decision.priorityRank} in this niche · score{" "}
+                {verdict.priorityScore.toFixed(2)}
+              </span>
+            )}
           </p>
+
+          {decision.diff && (
+            <p className="rounded-md border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200/90">
+              Since last run: {decision.diff.summary}
+            </p>
+          )}
 
           <div className="flex flex-wrap items-end gap-3">
             <button
@@ -1093,6 +1117,25 @@ function OpportunityDrawer({
                 className={inputClass}
               >
                 {REVIEW_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs text-zinc-500">
+              Outcome
+              <select
+                value={detail.outcome ?? "none"}
+                disabled={saving}
+                onChange={(e) =>
+                  patch({
+                    outcome: e.target.value as OpportunityOutcome,
+                  })
+                }
+                className={inputClass}
+              >
+                {OUTCOME_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
@@ -1166,6 +1209,36 @@ function OpportunityDrawer({
                 {money(verdict.tam.saasArrHintUsd, 0)}
               </p>
             </div>
+
+            {verdict.competitors && (
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                  Competitor intelligence · {verdict.competitors.beatability}
+                </p>
+                <p className="mt-1 text-sm text-zinc-300">
+                  {verdict.competitors.summary}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  SaaS {Math.round(verdict.competitors.saasShare * 100)}% ·
+                  content/UGC{" "}
+                  {Math.round(verdict.competitors.contentShare * 100)}%
+                  {verdict.competitors.medianIncumbentEtv != null
+                    ? ` · median incumbent ~${num(Math.round(verdict.competitors.medianIncumbentEtv))}/mo`
+                    : ""}
+                </p>
+              </div>
+            )}
+
+            {verdict.contentGap && (
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                  Intent / content gap
+                </p>
+                <p className="mt-1 text-sm text-zinc-300">
+                  {verdict.contentGap.detail}
+                </p>
+              </div>
+            )}
 
             {(detail.serp?.length ||
               verdict.organicSoftness != null ||

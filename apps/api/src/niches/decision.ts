@@ -3,8 +3,13 @@ import {
   annotateSerpSnapshot,
   buildBrief,
   buildVerdict,
+  captureDecisionSnapshot,
+  diffDecisionSnapshots,
   evaluateRubric,
   explainDemandScore,
+  type DecisionDiff,
+  type DecisionSnapshot,
+  type FactorWeightOverrides,
   type RubricConfig,
   type SerpSnapshotItem,
   type TrendAnalysis,
@@ -38,7 +43,7 @@ export function parseRubricConfig(
   };
 }
 
-function parseSerpSnapshot(
+export function parseSerpSnapshot(
   raw: Prisma.JsonValue | null | undefined,
 ): SerpSnapshotItem[] | null {
   if (!raw || !Array.isArray(raw)) return null;
@@ -50,10 +55,15 @@ function parseSerpSnapshot(
     const domain = typeof o.domain === "string" ? o.domain : "";
     const title = typeof o.title === "string" ? o.title : "";
     if (!domain && !title) continue;
+    const organicEtv =
+      typeof o.organicEtv === "number" && !Number.isNaN(o.organicEtv)
+        ? o.organicEtv
+        : null;
     items.push({
       rank,
       domain: domain || "unknown",
       title: title || domain || "untitled",
+      organicEtv,
       pageType:
         typeof o.pageType === "string"
           ? (o.pageType as SerpSnapshotItem["pageType"])
@@ -61,6 +71,31 @@ function parseSerpSnapshot(
     });
   }
   return items.length ? annotateSerpSnapshot(items) : null;
+}
+
+export function parseDecisionSnapshot(
+  raw: Prisma.JsonValue | null | undefined,
+): DecisionSnapshot | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.verdict !== "string" || typeof o.score !== "number") return null;
+  return {
+    verdict: o.verdict as DecisionSnapshot["verdict"],
+    score: o.score,
+    demandScore: typeof o.demandScore === "number" ? o.demandScore : 0,
+    totalVolume: typeof o.totalVolume === "number" ? o.totalVolume : 0,
+    avgCompetition:
+      typeof o.avgCompetition === "number" ? o.avgCompetition : 0,
+    organicSoftness:
+      typeof o.organicSoftness === "number" ? o.organicSoftness : null,
+    keywordDifficulty:
+      typeof o.keywordDifficulty === "number" ? o.keywordDifficulty : null,
+    priorityScore: typeof o.priorityScore === "number" ? o.priorityScore : 0,
+    capturedAt:
+      typeof o.capturedAt === "string"
+        ? o.capturedAt
+        : new Date().toISOString(),
+  };
 }
 
 export function attachDecisionSupport<
@@ -80,11 +115,14 @@ export function attachDecisionSupport<
     serpSnapshot?: Prisma.JsonValue | null;
     organicSoftness?: number | null;
     keywordDifficulty?: number | null;
+    previousSnapshot?: Prisma.JsonValue | null;
+    decisionSnapshot?: Prisma.JsonValue | null;
   },
 >(
   opportunities: T[],
   opts: {
     rubricConfig?: RubricConfig;
+    weightOverrides?: FactorWeightOverrides;
   } = {},
 ) {
   const rubric = opts.rubricConfig ?? DEFAULT_RUBRIC;
@@ -101,7 +139,7 @@ export function attachDecisionSupport<
   );
   const rankById = new Map(ranked.map((o, i) => [o.id, i + 1]));
 
-  return opportunities.map((o) => {
+  const withDecision = opportunities.map((o) => {
     const breakdown = explainDemandScore({
       totalVolume: o.totalVolume,
       avgCpc: o.avgCpc,
@@ -147,23 +185,61 @@ export function attachDecisionSupport<
       rubricPass: rubricResult.pass,
       rubricScore: rubricResult.score,
       monetizationModel: o.monetizationModel,
+      intent: o.intent,
       serp,
       organicSoftness: o.organicSoftness,
       keywordDifficulty: o.keywordDifficulty,
+      weightOverrides: opts.weightOverrides,
     });
+
+    const currentSnap = captureDecisionSnapshot({
+      verdict: verdict.verdict,
+      score: verdict.score,
+      demandScore: o.demandScore,
+      totalVolume: o.totalVolume,
+      avgCompetition: o.avgCompetition,
+      organicSoftness: verdict.organicSoftness,
+      keywordDifficulty: o.keywordDifficulty ?? null,
+      priorityScore: verdict.priorityScore,
+    });
+    // Prefer stored previousSnapshot; fall back to older decisionSnapshot for
+    // niches that haven't been re-scored since this feature landed.
+    const previous =
+      parseDecisionSnapshot(o.previousSnapshot) ??
+      parseDecisionSnapshot(o.decisionSnapshot);
+    const diff: DecisionDiff | null = previous
+      ? diffDecisionSnapshots(previous, currentSnap)
+      : null;
 
     return {
       ...o,
-      serp: serp,
+      serp,
       decision: {
         rank,
         breakdown,
         rubric: rubricResult,
         brief,
         verdict,
+        diff,
+        snapshot: currentSnap,
       },
     };
   });
+
+  // Cross-list priority rank (build this before that).
+  const byPriority = [...withDecision].sort(
+    (a, b) =>
+      b.decision.verdict.priorityScore - a.decision.verdict.priorityScore,
+  );
+  const priorityRankById = new Map(byPriority.map((o, i) => [o.id, i + 1]));
+
+  return withDecision.map((o) => ({
+    ...o,
+    decision: {
+      ...o.decision,
+      priorityRank: priorityRankById.get(o.id) ?? withDecision.length,
+    },
+  }));
 }
 
 export { DEFAULT_RUBRIC };

@@ -12,11 +12,13 @@ import {
   RECOMMENDED_SEED_MAX_CPC,
   analyzeOpportunityTrend,
   buildRecommendations,
+  deriveWeightOverrides,
   estimateRunCost,
   isCalculatorOrGeneratorSeed,
   searchSeedKeywords,
   type ApiSeedCandidate,
   type CreateNicheDto,
+  type OpportunityOutcome,
   type PromoteOpportunityDto,
   type RecommendationKeyword,
   type RejectSeedDto,
@@ -170,6 +172,9 @@ export class NichesService {
       keywordDifficulty?: number | null;
       strategyBrief?: Prisma.JsonValue | null;
       strategyGeneratedAt?: Date | null;
+      decisionSnapshot?: Prisma.JsonValue | null;
+      previousSnapshot?: Prisma.JsonValue | null;
+      outcome?: string | null;
       pinned: boolean;
       notes: string;
       reviewStatus: string;
@@ -212,6 +217,9 @@ export class NichesService {
       keywordDifficulty: o.keywordDifficulty ?? null,
       strategyBrief: o.strategyBrief ?? null,
       strategyGeneratedAt: o.strategyGeneratedAt ?? null,
+      decisionSnapshot: o.decisionSnapshot ?? null,
+      previousSnapshot: o.previousSnapshot ?? null,
+      outcome: o.outcome ?? "none",
       pinned: o.pinned,
       notes: o.notes,
       reviewStatus: o.reviewStatus,
@@ -231,6 +239,21 @@ export class NichesService {
   ): TrendAnalysis {
     return analyzeOpportunityTrend(
       keywords.map((k) => asTrendPoints(k.monthlyTrend)),
+    );
+  }
+
+  /** Soft weight nudges from operator-reported outcomes across all themes. */
+  private async loadWeightOverrides() {
+    const rows = await this.prisma.opportunity.findMany({
+      where: { outcome: { not: "none" } },
+      select: { outcome: true },
+      take: 200,
+      orderBy: { createdAt: "desc" },
+    });
+    return deriveWeightOverrides(
+      rows.map((r) => ({
+        outcome: (r.outcome || "none") as OpportunityOutcome,
+      })),
     );
   }
 
@@ -281,6 +304,7 @@ export class NichesService {
     ]);
 
     const rubricConfig = parseRubricConfig(niche.rubricConfig);
+    const weightOverrides = await this.loadWeightOverrides();
 
     const mapped = niche.opportunities.map((o) =>
       this.mapOpportunity(
@@ -290,6 +314,7 @@ export class NichesService {
     );
     const opportunities = attachDecisionSupport(mapped, {
       rubricConfig,
+      weightOverrides,
     });
 
     const oppCount = opportunities.length || 1;
@@ -358,6 +383,7 @@ export class NichesService {
     });
 
     const rubricConfig = parseRubricConfig(niche.rubricConfig);
+    const weightOverrides = await this.loadWeightOverrides();
     const withDecision = attachDecisionSupport(
       siblings.map((o) =>
         this.mapOpportunity(
@@ -365,7 +391,7 @@ export class NichesService {
           this.trendFromKeywords(o.keywords),
         ),
       ),
-      { rubricConfig },
+      { rubricConfig, weightOverrides },
     );
 
     const opportunity = await this.prisma.opportunity.findFirst({
@@ -420,6 +446,8 @@ export class NichesService {
       },
     });
 
+    const weightOverrides = await this.loadWeightOverrides();
+
     // Decision support is per-niche (rubric), so group then flatten.
     const byNiche = new Map<string, typeof rows>();
     for (const row of rows) {
@@ -439,6 +467,7 @@ export class NichesService {
         ),
         {
           rubricConfig: parseRubricConfig(niche.rubricConfig),
+          weightOverrides,
         },
       );
       return decided.map((o) => ({
@@ -449,15 +478,31 @@ export class NichesService {
       }));
     });
 
-    items.sort((a, b) => {
+    // Comparative board rank across all tracked themes.
+    const byPriority = [...items].sort(
+      (a, b) =>
+        b.decision.verdict.priorityScore - a.decision.verdict.priorityScore,
+    );
+    const boardRankById = new Map(byPriority.map((o, i) => [o.id, i + 1]));
+
+    const ranked = items.map((o) => ({
+      ...o,
+      boardRank: boardRankById.get(o.id) ?? items.length,
+    }));
+
+    ranked.sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      const scoreA = a.decision.verdict.score;
-      const scoreB = b.decision.verdict.score;
-      if (scoreA !== scoreB) return scoreB - scoreA;
-      return b.demandScore - a.demandScore;
+      // Builds first by priority, then watch/kill by verdict score.
+      const buildA = a.decision.verdict.verdict === "build" ? 1 : 0;
+      const buildB = b.decision.verdict.verdict === "build" ? 1 : 0;
+      if (buildA !== buildB) return buildB - buildA;
+      if (a.decision.verdict.priorityScore !== b.decision.verdict.priorityScore) {
+        return b.decision.verdict.priorityScore - a.decision.verdict.priorityScore;
+      }
+      return b.decision.verdict.score - a.decision.verdict.score;
     });
 
-    return { count: items.length, items };
+    return { count: ranked.length, items: ranked };
   }
 
   /**
@@ -489,10 +534,18 @@ export class NichesService {
       opportunity.productDescription.trim().slice(0, 120) ||
       niche.seedTerm;
 
+    const strategyNote =
+      opportunity.strategyBrief &&
+      typeof opportunity.strategyBrief === "object" &&
+      !Array.isArray(opportunity.strategyBrief) &&
+      typeof (opportunity.strategyBrief as { entryStrategy?: unknown })
+        .entryStrategy === "string"
+        ? `\n\nStrategy: ${(opportunity.strategyBrief as { entryStrategy: string }).entryStrategy}`
+        : "";
     const site = await this.sites.createSite({
       name: siteName,
       domain: dto.domain,
-      notes: `Promoted from niche "${niche.seedTerm}" · ${opportunity.productDescription}`,
+      notes: `Promoted from niche "${niche.seedTerm}" · ${opportunity.productDescription}${strategyNote}`,
     });
 
     const terms = opportunity.keywords.map((k) => k.term).filter(Boolean);
@@ -546,11 +599,15 @@ export class NichesService {
     if (!opportunity) throw new NotFoundException("Opportunity not found");
 
     const rubricConfig = parseRubricConfig(niche.rubricConfig);
+    const weightOverrides = await this.loadWeightOverrides();
     const mapped = this.mapOpportunity(
       { ...opportunity, keywordCount: opportunity.keywords.length },
       this.trendFromKeywords(opportunity.keywords),
     );
-    const [decided] = attachDecisionSupport([mapped], { rubricConfig });
+    const [decided] = attachDecisionSupport([mapped], {
+      rubricConfig,
+      weightOverrides,
+    });
     if (!decided) throw new NotFoundException("Opportunity not found");
 
     const brief = await this.claude.generateStrategyBrief(
@@ -1221,6 +1278,7 @@ export class NichesService {
         pinned: dto.pinned ?? undefined,
         notes: dto.notes ?? undefined,
         reviewStatus: dto.reviewStatus ?? undefined,
+        outcome: dto.outcome ?? undefined,
       },
       include: {
         _count: { select: { keywords: true } },
@@ -1228,7 +1286,24 @@ export class NichesService {
       },
     });
 
-    return this.mapOpportunity(
+    const niche = await this.prisma.niche.findUnique({
+      where: { id: nicheId },
+      select: { rubricConfig: true },
+    });
+    const weightOverrides = await this.loadWeightOverrides();
+    const [decided] = attachDecisionSupport(
+      [
+        this.mapOpportunity(
+          { ...updated, keywordCount: updated._count.keywords },
+          this.trendFromKeywords(updated.keywords),
+        ),
+      ],
+      {
+        rubricConfig: parseRubricConfig(niche?.rubricConfig),
+        weightOverrides,
+      },
+    );
+    return decided ?? this.mapOpportunity(
       updated,
       this.trendFromKeywords(updated.keywords),
     );

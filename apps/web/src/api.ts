@@ -96,9 +96,52 @@ export type StrategyBrief = {
   killCriteria: string;
 };
 
+export type Beatability = "beatable" | "contested" | "owned";
+
+export type CompetitorIntel = {
+  beatability: Beatability;
+  saasShare: number;
+  contentShare: number;
+  ugcShare: number;
+  medianIncumbentEtv: number | null;
+  topIncumbents: Array<{
+    domain: string;
+    pageType: SerpPageType;
+    organicEtv: number | null;
+  }>;
+  summary: string;
+};
+
+export type ContentGap = {
+  score: number;
+  detail: string;
+};
+
+export type DecisionDiff = {
+  verdictChanged: boolean;
+  fromVerdict: VerdictLabel | null;
+  toVerdict: VerdictLabel;
+  scoreDelta: number;
+  volumeDelta: number;
+  softnessDelta: number | null;
+  difficultyDelta: number | null;
+  priorityDelta: number;
+  summary: string;
+};
+
+export type OpportunityOutcome =
+  | "none"
+  | "built"
+  | "ranked"
+  | "abandoned"
+  | "revenue_low"
+  | "revenue_mid"
+  | "revenue_high";
+
 export type VerdictSupport = {
   verdict: VerdictLabel;
   score: number;
+  priorityScore: number;
   rationale: string;
   organicSoftness: number | null;
   tam: {
@@ -108,6 +151,8 @@ export type VerdictSupport = {
     score: number;
     summary: string;
   };
+  competitors: CompetitorIntel | null;
+  contentGap: ContentGap | null;
   factors: Array<{
     id: string;
     label: string;
@@ -119,6 +164,7 @@ export type VerdictSupport = {
 
 export type DecisionSupport = {
   rank: number;
+  priorityRank?: number;
   breakdown: {
     volumeFactor: number;
     cpcFactor: number;
@@ -142,6 +188,7 @@ export type DecisionSupport = {
     nextStep: string;
   };
   verdict: VerdictSupport;
+  diff?: DecisionDiff | null;
 };
 
 export type OpportunityRow = {
@@ -168,6 +215,7 @@ export type OpportunityRow = {
   keywordDifficulty?: number | null;
   strategyBrief?: StrategyBrief | null;
   strategyGeneratedAt?: string | null;
+  outcome?: OpportunityOutcome;
   pinned: boolean;
   notes: string;
   reviewStatus: string;
@@ -246,6 +294,7 @@ export type PortfolioItem = OpportunityRow & {
   nicheId: string;
   nicheSeedTerm: string;
   nicheStatus: string;
+  boardRank?: number;
 };
 
 export type RecommendedNiche = {
@@ -560,7 +609,12 @@ export const api = {
   updateOpportunity: (
     nicheId: string,
     oppId: string,
-    body: { pinned?: boolean; notes?: string; reviewStatus?: string },
+    body: {
+      pinned?: boolean;
+      notes?: string;
+      reviewStatus?: string;
+      outcome?: OpportunityOutcome;
+    },
   ) =>
     request<OpportunityRow>(`/niches/${nicheId}/opportunities/${oppId}`, {
       method: "PATCH",

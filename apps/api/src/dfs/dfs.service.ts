@@ -11,7 +11,8 @@ import {
   DfsPull2JobSchema,
   DfsPullResultSchema,
   DfsTrendsPullSchema,
-  buildDfsPull2Plan,
+  buildTrendsPlan,
+  trendsResultsFile,
   dfsAdsDateRange,
   nextTrendsJob,
   takeSeriesForKeyword,
@@ -140,7 +141,7 @@ export class DfsService {
   async startTrends(dto: StartDfsTrendsDto): Promise<DfsTrendsPull> {
     let plan;
     try {
-      plan = buildDfsPull2Plan(dto.source, dto.sourceName?.trim() || "dfs_pull2.py");
+      plan = buildTrendsPlan(dto.source, dto.sourceName);
     } catch (err) {
       throw new BadRequestException(messageOf(err));
     }
@@ -459,6 +460,7 @@ export class DfsService {
         ? row.warnings.filter((item): item is string => typeof item === "string")
         : [],
       endpoints: [...endpoints.entries()].map(([path, count]) => ({ path, count })),
+      resultsFile: trendsResultsFile(jobs, row.sourceName),
       jobs: jobs.map((job) => ({
         key: job.key,
         path: job.path,

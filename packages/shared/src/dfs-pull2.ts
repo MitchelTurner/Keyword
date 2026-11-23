@@ -81,6 +81,7 @@ export type DfsPull2Plan = {
   today: string;
   jobs: DfsPull2Job[];
   endpoints: DfsPull2EndpointCount[];
+  resultsFile: string;
 };
 
 export const StartDfsTrendsSchema = z.object({
@@ -121,6 +122,7 @@ export const DfsTrendsPullSchema = z.object({
   warnings: z.array(z.string()),
   endpoints: z.array(z.object({ path: z.string(), count: z.number() })),
   jobs: z.array(DfsTrendsJobMetaSchema),
+  resultsFile: z.string().default("dfs_results2.json"),
 });
 export type DfsTrendsPull = z.infer<typeof DfsTrendsPullSchema>;
 
@@ -355,7 +357,21 @@ export function buildDfsPull2Plan(
     today: iso(today),
     jobs: parsed.data,
     endpoints: endpointCounts(parsed.data),
+    resultsFile: "dfs_results2.json",
   };
+}
+
+export function trendsResultsFile(
+  jobs: readonly { key: string }[],
+  sourceName = "",
+): string {
+  if (
+    /dfs_pull3/i.test(sourceName) ||
+    jobs.some((job) => job.key.startsWith("gl_") || job.key.startsWith("h2h_"))
+  ) {
+    return "dfs_results3.json";
+  }
+  return "dfs_results2.json";
 }
 
 export function endpointCounts(jobs: readonly { path: string }[]): DfsPull2EndpointCount[] {

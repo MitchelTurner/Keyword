@@ -8,10 +8,11 @@ import {
 import {
   DFS_MARKETS,
   DFS_PULL2_DEFAULT_MAX_COST,
-  buildDfsPull2Plan,
+  buildTrendsPlan,
   dfsAdsDateRange,
   dfsPull2EndpointLabel,
   isDfsPull2Source,
+  isDfsPull3Source,
   labelRank,
   parseDfsPullSource,
   parsePlainKeywordList,
@@ -287,9 +288,9 @@ export default function DfsPullPage() {
     setScriptText(text);
     setSourceName(name);
     setParseError(null);
-    if (isDfsPull2Source(text)) {
+    if (isDfsPull3Source(text) || isDfsPull2Source(text)) {
       try {
-        const plan = buildDfsPull2Plan(text, name);
+        const plan = buildTrendsPlan(text, name);
         setTrendsPlan(plan);
         setParsed(null);
       } catch (err) {
@@ -530,7 +531,7 @@ export default function DfsPullPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "dfs_results2.json";
+    link.download = trendsResult?.resultsFile || "dfs_results2.json";
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -553,7 +554,7 @@ export default function DfsPullPage() {
     <div className="space-y-6 animate-fade-up">
       <PageHeader
         title="DFS pull"
-        description="Enter dfs_pull.py for monthly search volumes, or dfs_pull2.py for Google Trends, results pages, and autocomplete."
+        description="Enter dfs_pull.py for monthly search volumes, dfs_pull2.py for Trends plus results pages, or dfs_pull3.py for the longer Trends backtest."
       />
 
       {error && (
@@ -569,7 +570,7 @@ export default function DfsPullPage() {
 
       <Panel
         title="Enter a script"
-        hint="Volume scripts send keyword lists. dfs_pull2.py sends its request list. Login lines are ignored."
+        hint="Volume scripts send keyword lists. dfs_pull2.py and dfs_pull3.py send their request lists. Login lines are ignored."
       >
         <div
           onDragOver={(e) => {
@@ -613,6 +614,14 @@ export default function DfsPullPage() {
               onClick={() => void loadIncluded("/dfs_pull2.py", "dfs_pull2.py")}
             >
               Load dfs_pull2.py
+            </button>
+            <button
+              type="button"
+              className={ghostBtn}
+              disabled={reading || pulling}
+              onClick={() => void loadIncluded("/dfs_pull3.py", "dfs_pull3.py")}
+            >
+              Load dfs_pull3.py
             </button>
             <input
               ref={fileRef}
@@ -689,8 +698,9 @@ export default function DfsPullPage() {
               ))}
             </div>
             <p className="text-xs text-zinc-500">
-              Anchor {trendsPlan.anchor}. Dates use UTC, the same window as dfs_pull2.py.
-              Requests run in short batches so a long pull can resume.
+              Anchor {trendsPlan.anchor}. Dates use UTC, the same window as the script.
+              Requests run in short batches so a long pull can resume. Raw download:{" "}
+              {trendsPlan.resultsFile}
             </p>
             <label className="block max-w-xs text-xs text-zinc-400">
               Cost cap (USD)
@@ -920,7 +930,7 @@ export default function DfsPullPage() {
           {!loading && !result && !trendsResult && (
             <EmptyState
               title="No pull yet"
-              description="Enter dfs_pull.py for volumes, or dfs_pull2.py for Trends, results, and autocomplete."
+              description="Enter dfs_pull.py for volumes, dfs_pull2.py for Trends and results, or dfs_pull3.py for the longer Trends backtest."
             />
           )}
 

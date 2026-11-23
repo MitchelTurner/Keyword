@@ -8,6 +8,7 @@ import { PipelineModule } from "./pipeline/pipeline.module";
 import { NichesModule } from "./niches/niches.module";
 import { SitesModule } from "./sites/sites.module";
 import { DomainsModule } from "./domains/domains.module";
+import { DfsModule } from "./dfs/dfs.module";
 import { CostModule } from "./cost/cost.module";
 
 @Module({
@@ -22,6 +23,7 @@ import { CostModule } from "./cost/cost.module";
     NichesModule,
     SitesModule,
     DomainsModule,
+    DfsModule,
   ],
 })
 export class AppModule {}

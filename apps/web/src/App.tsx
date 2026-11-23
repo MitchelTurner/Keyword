@@ -4,6 +4,7 @@ import NicheDetailPage from "./pages/NicheDetailPage";
 import PortfolioPage from "./pages/PortfolioPage";
 import SitesPage from "./pages/SitesPage";
 import DomainIdeasPage from "./pages/DomainIdeasPage";
+import DfsPullPage from "./pages/DfsPullPage";
 
 function navClass({ isActive }: { isActive: boolean }) {
   return [
@@ -18,7 +19,7 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-zinc-800/80 bg-zinc-950/75 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-5">
             <Link to="/" className="group flex items-baseline gap-2">
               <span className="text-lg font-semibold tracking-tight text-emerald-400 transition-colors group-hover:text-emerald-300">
@@ -28,7 +29,7 @@ export default function App() {
                 research
               </span>
             </Link>
-            <nav className="flex items-center gap-1">
+            <nav className="flex flex-wrap items-center gap-1">
               <NavLink to="/" end className={navClass}>
                 Niches
               </NavLink>
@@ -37,6 +38,9 @@ export default function App() {
               </NavLink>
               <NavLink to="/domains" className={navClass}>
                 Domains
+              </NavLink>
+              <NavLink to="/dfs" className={navClass}>
+                DFS pull
               </NavLink>
               <NavLink to="/portfolio" className={navClass}>
                 Portfolio
@@ -53,6 +57,7 @@ export default function App() {
           <Route path="/" element={<NicheListPage />} />
           <Route path="/sites" element={<SitesPage />} />
           <Route path="/domains" element={<DomainIdeasPage />} />
+          <Route path="/dfs" element={<DfsPullPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
           <Route path="/niches/:id" element={<NicheDetailPage />} />
         </Routes>

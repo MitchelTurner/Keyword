@@ -111,6 +111,7 @@ export class DataForSeoService {
     endpoint: string,
     body: unknown,
     nicheId?: string,
+    timeoutMs = 180_000,
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     let lastError: unknown;
@@ -124,6 +125,7 @@ export class DataForSeoService {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(body),
+          signal: AbortSignal.timeout(timeoutMs),
         });
 
         if (res.status === 429 || res.status >= 500) {

@@ -179,3 +179,18 @@ model TrackedKeyword {
   @@index([status])
   @@index([parentId])
 }
+
+/// A DataForSEO volume pull started from an entered dfs_pull.py (or a keyword list).
+model DfsPull {
+  id         String   @id @default(cuid())
+  sourceName String   @default("dfs_pull.py")
+  keywords   Json
+  groups     Json
+  markets    Json
+  rows       Json
+  warnings   Json
+  cost       Float    @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}

@@ -1,3 +1,9 @@
+import type {
+  CreateDfsPullDto,
+  DfsPullResult,
+  DfsPullSummary,
+} from "@prospector/shared";
+
 const BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "/api" : "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -569,6 +575,16 @@ export const api = {
     }>(`/sites/${siteId}/keywords/${keywordId}/ideas`, {
       method: "POST",
       body: JSON.stringify(body ?? {}),
+    }),
+  listDfsPulls: () =>
+    request<{ pulls: DfsPullSummary[] }>("/dfs/pulls"),
+  latestDfsPull: () =>
+    request<{ pull: DfsPullResult | null }>("/dfs/pulls/latest"),
+  getDfsPull: (id: string) => request<DfsPullResult>(`/dfs/pulls/${id}`),
+  createDfsPull: (body: CreateDfsPullDto) =>
+    request<DfsPullResult>("/dfs/pulls", {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
   costEstimate: () => request<CostEstimate>("/niches/cost-estimate"),
   createNiche: (seedTerm: string) =>

@@ -63,6 +63,7 @@ async function bootstrap() {
     "/recommendations",
     "/sites",
     "/domains",
+    "/dfs",
   ];
 
   function isApiRequest(req: Request): boolean {

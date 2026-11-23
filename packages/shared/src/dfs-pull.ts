@@ -103,10 +103,16 @@ export const DfsPullSummarySchema = z.object({
   keywordCount: z.number().int(),
   markets: z.array(DfsMarketIdSchema),
   warnings: z.array(z.string()),
+  kind: z.enum(["volume", "trends"]).default("volume"),
+  status: z.enum(["running", "done", "capped"]).default("done"),
+  jobDone: z.number().int().default(0),
+  jobTotal: z.number().int().default(0),
+  maxCost: z.number().nullable().default(null),
 });
 export type DfsPullSummary = z.infer<typeof DfsPullSummarySchema>;
 
 export const DfsPullResultSchema = DfsPullSummarySchema.extend({
+  kind: z.literal("volume").default("volume"),
   rows: z.array(DfsPullRowSchema),
 });
 export type DfsPullResult = z.infer<typeof DfsPullResultSchema>;
@@ -447,6 +453,60 @@ function extractStrings(block: string): string[] {
     strings.push(unescapePy(raw));
   }
   return strings;
+}
+
+export function preparePythonSource(source: string): string {
+  return stripPythonComments(source.replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, ""));
+}
+
+export function pythonBracketAssignment(
+  source: string,
+  name: string,
+): string | null {
+  return findAssignment(preparePythonSource(source), name);
+}
+
+export function pythonStrings(block: string): string[] {
+  return extractStrings(block);
+}
+
+export function pythonYearLists(
+  block: string,
+): Array<{ year: number; keywords: string[] }> {
+  return parseYearLists(block);
+}
+
+export function pythonStringAssignment(
+  source: string,
+  name: string,
+): string | null {
+  const prepared = preparePythonSource(source);
+  const re = new RegExp(
+    `\\b${name}\\s*=\\s*("(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*')`,
+  );
+  const match = re.exec(prepared);
+  const literal = match?.[1];
+  if (!literal) return null;
+  return extractStrings(literal)[0] ?? null;
+}
+
+export function pythonStringIntDict(
+  source: string,
+  name: string,
+): Record<string, number> | null {
+  const block = pythonBracketAssignment(source, name);
+  if (!block?.startsWith("{")) return null;
+  const out: Record<string, number> = {};
+  const re = /"((?:\\.|[^"\\])*)"\s*:\s*(\d+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(block)) !== null) {
+    const raw = match[1];
+    if (raw == null) continue;
+    const key = extractStrings(`"${raw}"`)[0];
+    if (!key) continue;
+    out[key] = Number(match[2]);
+  }
+  return out;
 }
 
 function unescapePy(raw: string): string {

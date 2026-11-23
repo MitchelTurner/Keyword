@@ -180,15 +180,29 @@ model TrackedKeyword {
   @@index([parentId])
 }
 
-/// A DataForSEO volume pull started from an entered dfs_pull.py (or a keyword list).
+/// A DataForSEO pull started from an entered dfs_pull.py or dfs_pull2.py.
 model DfsPull {
   id         String   @id @default(cuid())
   sourceName String   @default("dfs_pull.py")
+  /// volume | trends
+  kind       String   @default("volume")
+  /// running | done | capped
+  status     String   @default("done")
+  maxCost    Float?
+  anchor     String?
+  jobTotal   Int      @default(0)
+  jobDone    Int      @default(0)
   keywords   Json
   groups     Json
   markets    Json
   rows       Json
   warnings   Json
+  /// dfs_pull2 request list. Volume pulls leave this empty.
+  plan       Json?
+  /// Per-request status for a trends pull, without the raw body.
+  jobMeta    Json?
+  /// Raw DataForSEO envelopes keyed by the script's tag.
+  responses  Json?
   cost       Float    @default(0)
   createdAt  DateTime @default(now())
 

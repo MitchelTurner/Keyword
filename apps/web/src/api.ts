@@ -1,7 +1,10 @@
 import type {
+  ContinueDfsTrendsDto,
   CreateDfsPullDto,
   DfsPullResult,
   DfsPullSummary,
+  DfsTrendsPull,
+  StartDfsTrendsDto,
 } from "@prospector/shared";
 
 const BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "/api" : "");
@@ -579,13 +582,28 @@ export const api = {
   listDfsPulls: () =>
     request<{ pulls: DfsPullSummary[] }>("/dfs/pulls"),
   latestDfsPull: () =>
-    request<{ pull: DfsPullResult | null }>("/dfs/pulls/latest"),
-  getDfsPull: (id: string) => request<DfsPullResult>(`/dfs/pulls/${id}`),
+    request<{ pull: DfsPullResult | DfsTrendsPull | null }>("/dfs/pulls/latest"),
+  getDfsPull: (id: string) =>
+    request<DfsPullResult | DfsTrendsPull>(`/dfs/pulls/${id}`),
   createDfsPull: (body: CreateDfsPullDto) =>
     request<DfsPullResult>("/dfs/pulls", {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  startDfsTrends: (body: StartDfsTrendsDto) =>
+    request<DfsTrendsPull>("/dfs/pulls/trends", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  continueDfsTrends: (id: string, body: ContinueDfsTrendsDto = {}) =>
+    request<DfsTrendsPull>(`/dfs/pulls/${id}/continue`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  rawDfsPull: (id: string) =>
+    request<{ pulled: string; anchor: string; responses: Record<string, unknown> }>(
+      `/dfs/pulls/${id}/raw`,
+    ),
   costEstimate: () => request<CostEstimate>("/niches/cost-estimate"),
   createNiche: (seedTerm: string) =>
     request<NicheListItem>("/niches", {

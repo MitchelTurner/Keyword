@@ -7,17 +7,31 @@ import {
 import {
   DFS_MARKETS,
   DFS_MARKET_IDS,
+  DFS_PULL2_DEFAULT_MAX_COST,
+  DfsPull2JobSchema,
   DfsPullResultSchema,
+  DfsTrendsPullSchema,
+  buildDfsPull2Plan,
   dfsAdsDateRange,
+  nextTrendsJob,
   takeSeriesForKeyword,
+  trendsResponseInfo,
+  trendsResponseSucceeded,
+  trendsRunStatus,
+  trendsSpent,
+  type ContinueDfsTrendsDto,
   type CreateDfsPullDto,
   type DfsMarketId,
   type DfsMarketSeries,
+  type DfsPull2Job,
   type DfsPullResult,
   type DfsPullRow,
   type DfsPullSummary,
+  type DfsTrendsPull,
+  type StartDfsTrendsDto,
 } from "@prospector/shared";
 import { Prisma } from "@prisma/client";
+import { z } from "zod";
 import {
   DataForSeoService,
   extractSearchVolumeItems,
@@ -35,6 +49,19 @@ import {
 const MARKET_GAP_MS = 2_000;
 const ADS_BATCH = 1000;
 const LABS_BATCH = 700;
+const TRENDS_BATCH_MS = 45_000;
+const TRENDS_GAP_MS = 400;
+
+type TrendMeta = Record<
+  string,
+  {
+    statusCode: number | null;
+    cost: number;
+    message: string;
+    settled: boolean;
+    ok: boolean;
+  }
+>;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -82,6 +109,11 @@ export class DfsService {
       select: {
         id: true,
         sourceName: true,
+        kind: true,
+        status: true,
+        maxCost: true,
+        jobDone: true,
+        jobTotal: true,
         cost: true,
         createdAt: true,
         keywords: true,
@@ -92,17 +124,70 @@ export class DfsService {
     return { pulls: rows.map((row) => this.summary(row)) };
   }
 
-  async latest(): Promise<{ pull: DfsPullResult | null }> {
+  async latest(): Promise<{ pull: DfsPullResult | DfsTrendsPull | null }> {
     const row = await this.prisma.dfsPull.findFirst({
       orderBy: { createdAt: "desc" },
     });
-    return { pull: row ? this.hydrate(row) : null };
+    return { pull: row ? this.present(row) : null };
   }
 
-  async get(id: string): Promise<DfsPullResult> {
+  async get(id: string): Promise<DfsPullResult | DfsTrendsPull> {
     const row = await this.prisma.dfsPull.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("DFS pull not found");
-    return this.hydrate(row);
+    return this.present(row);
+  }
+
+  async startTrends(dto: StartDfsTrendsDto): Promise<DfsTrendsPull> {
+    let plan;
+    try {
+      plan = buildDfsPull2Plan(dto.source, dto.sourceName?.trim() || "dfs_pull2.py");
+    } catch (err) {
+      throw new BadRequestException(messageOf(err));
+    }
+    const created = await this.prisma.dfsPull.create({
+      data: {
+        sourceName: plan.sourceName,
+        kind: "trends",
+        status: "running",
+        maxCost: dto.maxCost ?? DFS_PULL2_DEFAULT_MAX_COST,
+        anchor: plan.anchor,
+        jobTotal: plan.jobs.length,
+        jobDone: 0,
+        keywords: [],
+        groups: [],
+        markets: [],
+        rows: [],
+        warnings: [],
+        plan: plan.jobs as Prisma.InputJsonValue,
+        jobMeta: {},
+        responses: {},
+        cost: 0,
+      },
+    });
+    return this.runTrendsBatch(created.id, {});
+  }
+
+  async continueTrends(id: string, dto: ContinueDfsTrendsDto): Promise<DfsTrendsPull> {
+    return this.runTrendsBatch(id, dto);
+  }
+
+  async raw(id: string): Promise<{
+    pulled: string;
+    anchor: string;
+    responses: Record<string, unknown>;
+  }> {
+    const row = await this.prisma.dfsPull.findUnique({
+      where: { id },
+      select: { kind: true, anchor: true, createdAt: true, responses: true },
+    });
+    if (!row || row.kind !== "trends") {
+      throw new NotFoundException("DFS pull not found");
+    }
+    return {
+      pulled: row.createdAt.toISOString().slice(0, 10),
+      anchor: row.anchor ?? "taylor swift",
+      responses: readRecord(row.responses),
+    };
   }
 
   async create(dto: CreateDfsPullDto): Promise<DfsPullResult> {
@@ -250,9 +335,149 @@ export class DfsService {
     };
   }
 
+  private async runTrendsBatch(
+    id: string,
+    options: ContinueDfsTrendsDto,
+  ): Promise<DfsTrendsPull> {
+    const row = await this.prisma.dfsPull.findUnique({ where: { id } });
+    if (!row || row.kind !== "trends") {
+      throw new NotFoundException("DFS pull not found");
+    }
+    const jobs = z.array(DfsPull2JobSchema).parse(row.plan ?? []);
+    const responses = readRecord(row.responses);
+    const meta = readMeta(row.jobMeta);
+    if (options.retryFailed) {
+      for (const job of jobs) {
+        if (!trendsResponseSucceeded(responses[job.key])) delete meta[job.key];
+      }
+    }
+    const maxCost = options.maxCost ?? row.maxCost ?? DFS_PULL2_DEFAULT_MAX_COST;
+    const attempted = new Set<string>();
+    const deadline = Date.now() + TRENDS_BATCH_MS;
+    let sinceSave = 0;
+
+    while (Date.now() < deadline) {
+      const spent = trendsSpent(responses);
+      const job = nextTrendsJob(jobs, responses, meta, attempted, spent, maxCost);
+      if (!job) break;
+      attempted.add(job.key);
+      const raw = await this.dataForSeo.requestRaw(`/${job.path}`, [job.payload]);
+      responses[job.key] = raw as Prisma.JsonValue;
+      const info = trendsResponseInfo(raw);
+      meta[job.key] = {
+        ...info,
+        settled: true,
+        ok: trendsResponseSucceeded(raw),
+      };
+      sinceSave += 1;
+      if (sinceSave >= 5) {
+        await this.saveTrends(id, responses, meta, maxCost, jobs);
+        sinceSave = 0;
+      }
+      if (Date.now() < deadline - TRENDS_GAP_MS) {
+        await new Promise((resolve) => setTimeout(resolve, TRENDS_GAP_MS));
+      }
+    }
+
+    return this.saveTrends(id, responses, meta, maxCost, jobs);
+  }
+
+  private async saveTrends(
+    id: string,
+    responses: Record<string, unknown>,
+    meta: TrendMeta,
+    maxCost: number,
+    jobs: DfsPull2Job[],
+  ): Promise<DfsTrendsPull> {
+    const spent = trendsSpent(responses);
+    const done = jobs.filter((job) => trendsResponseSucceeded(responses[job.key])).length;
+    const failed = jobs.filter(
+      (job) => meta[job.key]?.settled && !trendsResponseSucceeded(responses[job.key]),
+    ).length;
+    const status = trendsRunStatus(jobs, responses, meta, spent, maxCost);
+    const warnings: string[] = [];
+    if (status === "capped") {
+      warnings.push(
+        `Stopped at the $${maxCost.toFixed(2)} cap after $${spent.toFixed(2)}. Raise the cap and continue to finish the rest.`,
+      );
+    }
+    if (failed > 0) {
+      warnings.push(
+        `${failed} request${failed === 1 ? "" : "s"} failed. Retry failed to send them again.`,
+      );
+    }
+    const saved = await this.prisma.dfsPull.update({
+      where: { id },
+      data: {
+        status,
+        maxCost,
+        jobDone: done,
+        cost: spent,
+        warnings,
+        jobMeta: meta as Prisma.InputJsonValue,
+        responses: responses as Prisma.InputJsonValue,
+      },
+    });
+    return this.presentTrends(saved, jobs);
+  }
+
+  private present(
+    row: Prisma.DfsPullGetPayload<Record<string, never>>,
+  ): DfsPullResult | DfsTrendsPull {
+    if (row.kind === "trends") {
+      const jobs = z.array(DfsPull2JobSchema).parse(row.plan ?? []);
+      return this.presentTrends(row, jobs);
+    }
+    return this.hydrate(row);
+  }
+
+  private presentTrends(
+    row: Prisma.DfsPullGetPayload<Record<string, never>>,
+    jobs: DfsPull2Job[],
+  ): DfsTrendsPull {
+    const responses = readRecord(row.responses);
+    const meta = readMeta(row.jobMeta);
+    const endpoints = new Map<string, number>();
+    for (const job of jobs) endpoints.set(job.path, (endpoints.get(job.path) ?? 0) + 1);
+    const done = jobs.filter((job) => trendsResponseSucceeded(responses[job.key])).length;
+    const failed = jobs.filter(
+      (job) => meta[job.key]?.settled && !trendsResponseSucceeded(responses[job.key]),
+    ).length;
+    return DfsTrendsPullSchema.parse({
+      kind: "trends",
+      id: row.id,
+      sourceName: row.sourceName,
+      pulledAt: row.createdAt.toISOString(),
+      anchor: row.anchor ?? "taylor swift",
+      status: row.status === "capped" || row.status === "done" ? row.status : "running",
+      cost: row.cost,
+      maxCost: row.maxCost ?? DFS_PULL2_DEFAULT_MAX_COST,
+      jobTotal: jobs.length,
+      jobDone: done,
+      failed,
+      warnings: Array.isArray(row.warnings)
+        ? row.warnings.filter((item): item is string => typeof item === "string")
+        : [],
+      endpoints: [...endpoints.entries()].map(([path, count]) => ({ path, count })),
+      jobs: jobs.map((job) => ({
+        key: job.key,
+        path: job.path,
+        statusCode: meta[job.key]?.statusCode ?? null,
+        cost: meta[job.key]?.cost ?? 0,
+        message: meta[job.key]?.message ?? "",
+        ok: meta[job.key]?.ok === true || trendsResponseSucceeded(responses[job.key]),
+      })),
+    });
+  }
+
   private summary(row: {
     id: string;
     sourceName: string;
+    kind: string;
+    status: string;
+    maxCost: number | null;
+    jobDone: number;
+    jobTotal: number;
     cost: number;
     createdAt: Date;
     keywords: Prisma.JsonValue;
@@ -269,15 +494,25 @@ export class DfsService {
       sourceName: row.sourceName,
       pulledAt: row.createdAt.toISOString(),
       cost: row.cost,
-      keywordCount: keywords.length,
+      keywordCount: row.kind === "trends" ? row.jobTotal : keywords.length,
       markets,
       warnings,
+      kind: row.kind === "trends" ? "trends" : "volume",
+      status: row.status === "running" || row.status === "capped" ? row.status : "done",
+      jobDone: row.jobDone,
+      jobTotal: row.jobTotal,
+      maxCost: row.maxCost,
     };
   }
 
   private hydrate(row: {
     id: string;
     sourceName: string;
+    kind: string;
+    status: string;
+    maxCost: number | null;
+    jobDone: number;
+    jobTotal: number;
     cost: number;
     createdAt: Date;
     keywords: Prisma.JsonValue;
@@ -287,7 +522,36 @@ export class DfsService {
   }): DfsPullResult {
     return DfsPullResultSchema.parse({
       ...this.summary(row),
+      kind: "volume",
       rows: row.rows,
     });
   }
+}
+
+function readRecord(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function readMeta(value: Prisma.JsonValue | null | undefined): TrendMeta {
+  const record = readRecord(value);
+  const meta: TrendMeta = {};
+  for (const [key, raw] of Object.entries(record)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const item = raw as {
+      statusCode?: unknown;
+      cost?: unknown;
+      message?: unknown;
+      settled?: unknown;
+      ok?: unknown;
+    };
+    meta[key] = {
+      statusCode: typeof item.statusCode === "number" ? item.statusCode : null,
+      cost: typeof item.cost === "number" ? item.cost : 0,
+      message: typeof item.message === "string" ? item.message : "",
+      settled: item.settled === true,
+      ok: item.ok === true,
+    };
+  }
+  return meta;
 }

@@ -7,16 +7,22 @@ import {
 } from "react";
 import {
   DFS_MARKETS,
+  DFS_PULL2_DEFAULT_MAX_COST,
+  buildDfsPull2Plan,
   dfsAdsDateRange,
+  dfsPull2EndpointLabel,
+  isDfsPull2Source,
   labelRank,
   parseDfsPullSource,
   parsePlainKeywordList,
   sectionTitle,
   type DfsMarketId,
   type DfsParsedScript,
+  type DfsPull2Plan,
   type DfsPullResult,
   type DfsPullRow,
   type DfsPullSummary,
+  type DfsTrendsPull,
   type DfsVolumePoint,
 } from "@prospector/shared";
 import { api, money, num } from "../api";
@@ -101,7 +107,23 @@ function toneOf(
   return "flat";
 }
 
-function summaryOf(result: DfsPullResult): DfsPullSummary {
+function summaryOf(result: DfsPullResult | DfsTrendsPull): DfsPullSummary {
+  if (result.kind === "trends") {
+    return {
+      id: result.id,
+      sourceName: result.sourceName,
+      pulledAt: result.pulledAt,
+      cost: result.cost,
+      keywordCount: result.jobTotal,
+      markets: [],
+      warnings: result.warnings,
+      kind: "trends",
+      status: result.status,
+      jobDone: result.jobDone,
+      jobTotal: result.jobTotal,
+      maxCost: result.maxCost,
+    };
+  }
   return {
     id: result.id,
     sourceName: result.sourceName,
@@ -110,7 +132,16 @@ function summaryOf(result: DfsPullResult): DfsPullSummary {
     keywordCount: result.keywordCount,
     markets: result.markets,
     warnings: result.warnings,
+    kind: "volume",
+    status: result.status,
+    jobDone: result.jobDone,
+    jobTotal: result.jobTotal,
+    maxCost: result.maxCost,
   };
+}
+
+function isTrends(pull: DfsPullResult | DfsTrendsPull): pull is DfsTrendsPull {
+  return pull.kind === "trends";
 }
 
 export default function DfsPullPage() {
@@ -119,6 +150,9 @@ export default function DfsPullPage() {
   const [scriptText, setScriptText] = useState("");
   const [sourceName, setSourceName] = useState("dfs_pull.py");
   const [parsed, setParsed] = useState<DfsParsedScript | null>(null);
+  const [trendsPlan, setTrendsPlan] = useState<DfsPull2Plan | null>(null);
+  const [trendsResult, setTrendsResult] = useState<DfsTrendsPull | null>(null);
+  const [maxCost, setMaxCost] = useState(String(DFS_PULL2_DEFAULT_MAX_COST));
   const [unchecked, setUnchecked] = useState<Set<string>>(() => new Set());
   const [extraDraft, setExtraDraft] = useState("");
   const [markets, setMarkets] = useState<DfsMarketId[]>(
@@ -165,7 +199,8 @@ export default function DfsPullPage() {
         ]);
         if (cancelled) return;
         setPulls(list.pulls);
-        if (latest.pull) setResult(latest.pull);
+        if (latest.pull && isTrends(latest.pull)) setTrendsResult(latest.pull);
+        else if (latest.pull) setResult(latest.pull);
       } catch (err) {
         if (!cancelled) setSavedUnavailable(true);
       } finally {
@@ -251,11 +286,23 @@ export default function DfsPullPage() {
   function applySource(text: string, name: string) {
     setScriptText(text);
     setSourceName(name);
+    setParseError(null);
+    if (isDfsPull2Source(text)) {
+      try {
+        const plan = buildDfsPull2Plan(text, name);
+        setTrendsPlan(plan);
+        setParsed(null);
+      } catch (err) {
+        setTrendsPlan(null);
+        setParseError(explain(err));
+      }
+      return;
+    }
+    setTrendsPlan(null);
     try {
       const next = parseDfsPullSource(text, name);
       setParsed(next);
       setUnchecked(new Set());
-      setParseError(null);
     } catch (err) {
       setParseError(explain(err));
     }
@@ -273,16 +320,16 @@ export default function DfsPullPage() {
     }
   }
 
-  async function loadIncluded() {
+  async function loadIncluded(path: string, name: string) {
     setReading(true);
     setError(null);
     try {
-      const res = await fetch("/dfs_pull.py");
+      const res = await fetch(path);
       const text = await res.text();
       if (!res.ok || text.trim().startsWith("<")) {
-        throw new Error("Included dfs_pull.py was not found.");
+        throw new Error(`Included ${name} was not found.`);
       }
-      applySource(text, "dfs_pull.py");
+      applySource(text, name);
     } catch (err) {
       setParseError(explain(err));
     } finally {
@@ -371,6 +418,7 @@ export default function DfsPullPage() {
     setError(null);
     try {
       const selectedSet = new Set(selectedKeywords.map((keyword) => keyword.toLowerCase()));
+      setTrendsResult(null);
       const created = await api.createDfsPull({
         sourceName: parsed.sourceName,
         keywords: selectedKeywords,
@@ -399,21 +447,92 @@ export default function DfsPullPage() {
     }
   }
 
-  async function openPull(id: string) {
-    if (!id || id === result?.id) return;
-    setError(null);
+  function parsedMaxCost(): number | null {
+    const value = Number(maxCost);
+    if (!Number.isFinite(value) || value <= 0 || value > 100) return null;
+    return value;
+  }
+
+  async function runTrends(mode: "start" | "continue" | "retry") {
+    const cap = parsedMaxCost();
+    if (cap == null) {
+      setError("Cost cap must be a number from 0.01 to 100.");
+      return;
+    }
+    if (mode === "start" && !trendsPlan) return;
+    if (mode !== "start" && !trendsResult) return;
+    if (mode === "start" && trendsPlan) {
+      const ok = confirm(
+        `Run ${trendsPlan.jobs.length} DataForSEO requests from ${trendsPlan.sourceName}?\n\nCost cap: $${cap.toFixed(2)}. The pull stops when that is reached. Login lines in the script are ignored.`,
+      );
+      if (!ok) return;
+    }
     setPulling(true);
+    setError(null);
+    setResult(null);
     try {
-      const next = await api.getDfsPull(id);
-      setResult(next);
-      setSelected(null);
-      setLabelFilter("all");
-      setFullHistory(false);
+      let current =
+        mode === "start"
+          ? await api.startDfsTrends({
+              source: scriptText,
+              sourceName: trendsPlan?.sourceName ?? sourceName,
+              maxCost: cap,
+            })
+          : await api.continueDfsTrends(trendsResult!.id, {
+              maxCost: cap,
+              retryFailed: mode === "retry",
+            });
+      setTrendsResult(current);
+      setPulls((prev) =>
+        [summaryOf(current), ...prev.filter((item) => item.id !== current.id)].slice(0, 12),
+      );
+      while (current.status === "running") {
+        current = await api.continueDfsTrends(current.id, { maxCost: cap });
+        setTrendsResult(current);
+      }
+      requestAnimationFrame(() => {
+        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     } catch (err) {
       setError(explain(err));
     } finally {
       setPulling(false);
     }
+  }
+
+  async function openPull(id: string) {
+    if (!id || id === result?.id || id === trendsResult?.id) return;
+    setError(null);
+    setPulling(true);
+    try {
+      const next = await api.getDfsPull(id);
+      if (isTrends(next)) {
+        setTrendsResult(next);
+        setResult(null);
+        setTrendsPlan(null);
+      } else {
+        setResult(next);
+        setTrendsResult(null);
+        setSelected(null);
+        setLabelFilter("all");
+        setFullHistory(false);
+      }
+    } catch (err) {
+      setError(explain(err));
+    } finally {
+      setPulling(false);
+    }
+  }
+
+  async function downloadTrends(id: string) {
+    const raw = await api.rawDfsPull(id);
+    const blob = new Blob([JSON.stringify(raw)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "dfs_results2.json";
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   function download(current: DfsPullResult) {
@@ -434,7 +553,7 @@ export default function DfsPullPage() {
     <div className="space-y-6 animate-fade-up">
       <PageHeader
         title="DFS pull"
-        description="Enter dfs_pull.py to pull monthly search volumes: worldwide Google Ads plus Labs history for the US, Brazil, and the UK."
+        description="Enter dfs_pull.py for monthly search volumes, or dfs_pull2.py for Google Trends, results pages, and autocomplete."
       />
 
       {error && (
@@ -449,8 +568,8 @@ export default function DfsPullPage() {
       )}
 
       <Panel
-        title="Enter dfs_pull.py"
-        hint="The file stays in your browser. Only the keyword lists are sent."
+        title="Enter a script"
+        hint="Volume scripts send keyword lists. dfs_pull2.py sends its request list. Login lines are ignored."
       >
         <div
           onDragOver={(e) => {
@@ -477,15 +596,23 @@ export default function DfsPullPage() {
               disabled={reading || pulling}
               onClick={() => fileRef.current?.click()}
             >
-              {reading ? "Reading…" : "Enter dfs_pull.py"}
+              {reading ? "Reading…" : "Enter script"}
             </button>
             <button
               type="button"
               className={ghostBtn}
               disabled={reading || pulling}
-              onClick={() => void loadIncluded()}
+              onClick={() => void loadIncluded("/dfs_pull.py", "dfs_pull.py")}
             >
-              Load included script
+              Load dfs_pull.py
+            </button>
+            <button
+              type="button"
+              className={ghostBtn}
+              disabled={reading || pulling}
+              onClick={() => void loadIncluded("/dfs_pull2.py", "dfs_pull2.py")}
+            >
+              Load dfs_pull2.py
             </button>
             <input
               ref={fileRef}
@@ -504,7 +631,7 @@ export default function DfsPullPage() {
           </div>
           <label className="mt-3 block">
             <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Or paste dfs_pull.py
+              Or paste a script
             </span>
             <textarea
               value={scriptText}
@@ -530,11 +657,57 @@ export default function DfsPullPage() {
                   ` · ${selectedKeywords.length} selected`}
               </span>
             )}
+            {trendsPlan && (
+              <span className="text-xs text-zinc-400">
+                {trendsPlan.sourceName}: {trendsPlan.jobs.length} requests · anchor{" "}
+                {trendsPlan.anchor}
+              </span>
+            )}
           </div>
           {parseError && (
             <p className="mt-2 text-sm text-rose-300">{parseError}</p>
           )}
         </div>
+
+        {trendsPlan && (
+          <form
+            className="mt-4 space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void runTrends("start");
+            }}
+          >
+            <div className="flex flex-wrap gap-2 text-xs text-zinc-300">
+              {trendsPlan.endpoints.map((item) => (
+                <span
+                  key={item.path}
+                  className="rounded border border-zinc-800 bg-zinc-950/60 px-2 py-1"
+                >
+                  {dfsPull2EndpointLabel(item.path)}{" "}
+                  <span className="tabular-nums text-zinc-500">{item.count}</span>
+                </span>
+              ))}
+            </div>
+            <p className="text-xs text-zinc-500">
+              Anchor {trendsPlan.anchor}. Dates use UTC, the same window as dfs_pull2.py.
+              Requests run in short batches so a long pull can resume.
+            </p>
+            <label className="block max-w-xs text-xs text-zinc-400">
+              Cost cap (USD)
+              <input
+                value={maxCost}
+                onChange={(e) => setMaxCost(e.target.value)}
+                inputMode="decimal"
+                className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm text-zinc-100 outline-none ring-emerald-500/30 transition focus:border-emerald-700 focus:ring"
+              />
+            </label>
+            <button type="submit" className={primaryBtn} disabled={pulling}>
+              {pulling
+                ? "Pulling…"
+                : `Run ${trendsPlan.jobs.length} requests`}
+            </button>
+          </form>
+        )}
 
         {parsed && (
           <form onSubmit={onPull} className="mt-4 space-y-4">
@@ -664,13 +837,16 @@ export default function DfsPullPage() {
         )}
       </Panel>
 
+      {(loading || result || trendsResult || pulls.length > 0) && (
       <div ref={resultsRef}>
         <Panel
-          title="Volumes"
+          title={trendsResult ? "Trends pull" : "Volumes"}
           hint={
-            result
-              ? `${formatAlaska(result.pulledAt)} · ${money(result.cost, 2)} · ${result.sourceName}`
-              : undefined
+            trendsResult
+              ? `${formatAlaska(trendsResult.pulledAt)} · ${money(trendsResult.cost, 2)} of ${money(trendsResult.maxCost, 2)} · ${trendsResult.sourceName}`
+              : result
+                ? `${formatAlaska(result.pulledAt)} · ${money(result.cost, 2)} · ${result.sourceName}`
+                : undefined
           }
         >
           {pulls.length > 0 && (
@@ -679,19 +855,53 @@ export default function DfsPullPage() {
                 Previous pulls
                 <select
                   className="ml-2 rounded-md border border-zinc-700 bg-zinc-950/80 px-2 py-1 text-xs text-zinc-200"
-                  value={result?.id ?? ""}
+                  value={trendsResult?.id ?? result?.id ?? ""}
                   disabled={pulling}
                   onChange={(e) => void openPull(e.target.value)}
                 >
                   {pulls.map((pull) => (
                     <option key={pull.id} value={pull.id}>
-                      {formatAlaska(pull.pulledAt)} · {pull.keywordCount} keywords ·{" "}
-                      {money(pull.cost, 2)}
+                      {formatAlaska(pull.pulledAt)} ·{" "}
+                      {pull.kind === "trends"
+                        ? `${pull.jobDone}/${pull.jobTotal || pull.keywordCount} requests`
+                        : `${pull.keywordCount} keywords`}{" "}
+                      · {money(pull.cost, 2)}
                     </option>
                   ))}
                 </select>
               </label>
-              {result && (
+              {trendsResult && (
+                <>
+                  <button
+                    type="button"
+                    className={ghostBtn}
+                    onClick={() => void downloadTrends(trendsResult.id).catch((err) => setError(explain(err)))}
+                  >
+                    Download raw JSON
+                  </button>
+                  {trendsResult.failed > 0 && (
+                    <button
+                      type="button"
+                      className={ghostBtn}
+                      disabled={pulling}
+                      onClick={() => void runTrends("retry")}
+                    >
+                      Retry failed
+                    </button>
+                  )}
+                  {(trendsResult.status === "capped" || trendsResult.status === "running") && (
+                    <button
+                      type="button"
+                      className={ghostBtn}
+                      disabled={pulling}
+                      onClick={() => void runTrends("continue")}
+                    >
+                      Continue
+                    </button>
+                  )}
+                </>
+              )}
+              {result && !trendsResult && (
                 <button
                   type="button"
                   className={ghostBtn}
@@ -707,14 +917,62 @@ export default function DfsPullPage() {
             <p className="text-sm text-zinc-500">Loading saved pulls…</p>
           )}
 
-          {!loading && !result && (
+          {!loading && !result && !trendsResult && (
             <EmptyState
               title="No pull yet"
-              description="Enter dfs_pull.py, choose the keywords, and pull monthly volumes."
+              description="Enter dfs_pull.py for volumes, or dfs_pull2.py for Trends, results, and autocomplete."
             />
           )}
 
-          {result && (
+          {trendsResult && (
+            <div className="space-y-3">
+              <p className="text-sm text-zinc-300">
+                {trendsResult.jobDone} of {trendsResult.jobTotal} finished
+                {trendsResult.failed > 0 ? ` · ${trendsResult.failed} failed` : ""}
+                {" · "}
+                {trendsResult.status === "running"
+                  ? "still running"
+                  : trendsResult.status === "capped"
+                    ? "stopped at the cost cap"
+                    : "finished"}
+              </p>
+              {trendsResult.warnings.length > 0 && (
+                <div className="rounded-md border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200/90">
+                  {trendsResult.warnings.join(" ")}
+                </div>
+              )}
+              <div className="max-h-80 overflow-auto rounded-md border border-zinc-800">
+                <table className="w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-zinc-900 text-zinc-500">
+                    <tr>
+                      <th className="px-2 py-1.5 font-medium">Request</th>
+                      <th className="px-2 py-1.5 font-medium">Endpoint</th>
+                      <th className="px-2 py-1.5 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trendsResult.jobs.map((job, index) => (
+                      <tr key={`${job.key}-${index}`} className="border-t border-zinc-800/80">
+                        <td className="px-2 py-1.5 text-zinc-200">{job.key}</td>
+                        <td className="px-2 py-1.5 text-zinc-400">
+                          {dfsPull2EndpointLabel(job.path)}
+                        </td>
+                        <td className="px-2 py-1.5 text-zinc-400">
+                          {job.statusCode == null
+                            ? "waiting"
+                            : job.ok
+                              ? "ok"
+                              : `${job.statusCode}${job.message ? ` ${job.message}` : ""}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {result && !trendsResult && (
             <div className="space-y-3">
               {result.warnings.length > 0 && (
                 <div className="rounded-md border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200/90">
@@ -827,6 +1085,7 @@ export default function DfsPullPage() {
           )}
         </Panel>
       </div>
+      )}
     </div>
   );
 }

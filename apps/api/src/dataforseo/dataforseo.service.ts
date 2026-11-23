@@ -184,6 +184,90 @@ export class DataForSeoService {
   }
 
   /**
+   * Like request(), but keeps task-level failures and returns a synthetic
+   * envelope after retries. dfs_pull2.py saves those and continues.
+   */
+  async requestRaw(
+    endpoint: string,
+    body: unknown,
+    timeoutMs = 180_000,
+  ): Promise<Record<string, unknown>> {
+    const url = `${this.baseUrl}${endpoint}`;
+    let lastMessage = "DataForSEO request failed";
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            Authorization: this.authHeader(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`DataForSEO HTTP ${res.status}: ${text.slice(0, 300)}`);
+        }
+        const json: unknown = await res.json();
+        if (!json || typeof json !== "object" || Array.isArray(json)) {
+          return {
+            status_code: -1,
+            status_message: "DataForSEO returned a non-object",
+            cost: 0,
+            tasks: [],
+          };
+        }
+        const record = json as Record<string, unknown>;
+        const task = Array.isArray(record.tasks) ? record.tasks[0] : undefined;
+        const taskCost =
+          task && typeof task === "object" && typeof (task as { cost?: unknown }).cost === "number"
+            ? (task as { cost: number }).cost
+            : undefined;
+        const cost =
+          taskCost ?? (typeof record.cost === "number" ? record.cost : 0);
+        const statusCode =
+          task &&
+          typeof task === "object" &&
+          typeof (task as { status_code?: unknown }).status_code === "number"
+            ? (task as { status_code: number }).status_code
+            : record.status_code;
+        await this.costService
+          .logCost({
+            provider: "dataforseo",
+            endpoint,
+            cost,
+            meta: { status_code: statusCode, raw: true },
+          })
+          .catch(() => undefined);
+        return record;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        lastMessage = message;
+        const retryable =
+          message.includes("HTTP 429") ||
+          /HTTP 5\d\d/.test(message) ||
+          message.includes("fetch failed") ||
+          message.includes("aborted") ||
+          message.includes("Timeout");
+        this.logger.warn(
+          `DataForSEO raw ${endpoint} attempt ${attempt} failed: ${message}`,
+        );
+        if (!retryable || attempt === 3) break;
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
+    }
+
+    return {
+      status_code: -1,
+      status_message: lastMessage.slice(0, 300),
+      cost: 0,
+      tasks: [],
+    };
+  }
+
+  /**
    * Pull broad keyword-database candidates for a seed.
    * Does NOT require the seed phrase inside each term — Claude filters relevance.
    */
